@@ -73,7 +73,7 @@ export async function getProperties(filters?: Partial<{
   if (!props || props.length === 0) return []
 
   // Manual join: fetch owners for properties that have owner_id
-  const ownerIds = [...new Set(props.map((p: Property) => p.owner_id).filter(Boolean))] as string[]
+  const ownerIds = Array.from(new Set(props.map((p: Property) => p.owner_id).filter(Boolean))) as string[]
   let ownersMap: Record<string, Owner> = {}
   if (ownerIds.length > 0) {
     const { data: owners } = await sb.from('owners').select('*').in('id', ownerIds)
