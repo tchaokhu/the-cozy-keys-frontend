@@ -20,7 +20,7 @@ export default function Footer() {
             </p>
             <div className="flex gap-3">
               <a
-                href="https://lin.ee/ZhDShaPc"
+                href="@thecozykeys"
                 target="_blank"
                 rel="noreferrer"
                 className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200"
@@ -76,7 +76,7 @@ export default function Footer() {
                 <Phone size={14} style={{ color: 'var(--terracotta-light)' }} />
                 K. Dear 098 091 5461
               </a>
-              <a href="https://lin.ee/ZhDShaPc" className="flex items-center gap-3 text-sm"
+              <a href="@thecozykeys" className="flex items-center gap-3 text-sm"
                 style={{ color: 'rgba(245,240,232,0.6)' }}>
                 <MessageCircle size={14} style={{ color: 'var(--terracotta-light)' }} />
                 LINE: The Cozy Keys

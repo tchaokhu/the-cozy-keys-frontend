@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Property, Inquiry } from '@/types'
+import type { Property, Inquiry, Owner } from '@/types'
 
 // Lazy init — ไม่ crash ถ้ายังไม่มี .env.local
 let _supabase: SupabaseClient | null = null
@@ -16,41 +16,26 @@ function getSupabase() {
 const useMock = () => !process.env.NEXT_PUBLIC_SUPABASE_URL
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
-export const MOCK_PROPERTIES: Property[] = [];
-
-export const MOCK_INQUIRIES: Inquiry[] = [
+export const MOCK_OWNERS: Owner[] = [
   {
-    id: '1',
-    property_id: '1',
-    name: 'สมชาย ใจดี',
+    id: 'owner-1',
+    name: 'สมศักดิ์ วงศ์ทอง',
     phone: '081-234-5678',
-    email: 'somchai@email.com',
-    message: 'สนใจห้องนี้มาก อยากนัดชมวันเสาร์นี้ได้ไหมครับ',
-    preferred_date: '2025-08-02',
-    status: 'new',
+    email: 'somsak@email.com',
+    line_id: '@somsak',
     created_at: new Date().toISOString(),
   },
   {
-    id: '2',
-    property_id: '2',
-    name: 'นงนุช สวยงาม',
+    id: 'owner-2',
+    name: 'นิตยา พรรณราย',
     phone: '089-876-5432',
-    message: 'ราคาต่อรองได้ไหมคะ มีเด็กเล็ก 1 คน',
-    status: 'contacted',
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: '3',
-    property_id: '5',
-    name: 'Tanaka Hiroshi',
-    phone: '085-111-2233',
-    email: 'tanaka@company.jp',
-    message: 'Looking for long-term rental, 1 year contract preferred',
-    preferred_date: '2025-08-05',
-    status: 'new',
-    created_at: new Date(Date.now() - 3600000).toISOString(),
+    created_at: new Date().toISOString(),
   },
 ]
+
+export const MOCK_PROPERTIES: Property[] = [];
+
+export const MOCK_INQUIRIES: Inquiry[] = []
 
 // ─── API helpers ─────────────────────────────────────────────────────────────
 export async function getProperties(filters?: Partial<{
@@ -83,15 +68,30 @@ export async function getProperties(filters?: Partial<{
   if (filters?.bedrooms) query = query.eq('bedrooms', filters.bedrooms)
   if (filters?.status) query = query.eq('status', filters.status)
 
-  const { data, error } = await query
+  const { data: props, error } = await query
   if (error) throw error
-  return data || []
+  if (!props || props.length === 0) return []
+
+  // Manual join: fetch owners for properties that have owner_id
+  const ownerIds = [...new Set(props.map((p: Property) => p.owner_id).filter(Boolean))] as string[]
+  let ownersMap: Record<string, Owner> = {}
+  if (ownerIds.length > 0) {
+    const { data: owners } = await sb.from('owners').select('*').in('id', ownerIds)
+    if (owners) {
+      ownersMap = Object.fromEntries(owners.map((o: Owner) => [o.id, o]))
+    }
+  }
+
+  return props.map((p: Property) => ({
+    ...p,
+    owner: p.owner_id ? ownersMap[p.owner_id] : undefined,
+  }))
 }
 
 export async function getPropertyById(id: string): Promise<Property | null> {
   if (useMock()) return MOCK_PROPERTIES.find(p => p.id === id) || null
   const sb = getSupabase()!
-  const { data, error } = await sb.from('properties').select('*').eq('id', id).single()
+  const { data, error } = await sb.from('properties').select('*').eq('id', id).maybeSingle()
   if (error) return null
   return data
 }
@@ -115,4 +115,146 @@ export async function getInquiries(): Promise<Inquiry[]> {
     .order('created_at', { ascending: false })
   if (error) throw error
   return data || []
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'))
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function uploadPropertyImage(file: File): Promise<string> {
+  const sb = getSupabase()
+  if (!sb) return fileToDataUrl(file)
+
+  const ext = file.name.split('.').pop()
+  const path = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const { error } = await sb.storage.from('property-images').upload(path, file, { upsert: false })
+  if (error) {
+    // bucket ไม่ได้ตั้งค่า — fallback เป็น data URL
+    console.warn('Storage upload failed, falling back to data URL:', error.message)
+    return fileToDataUrl(file)
+  }
+  const { data } = sb.storage.from('property-images').getPublicUrl(path)
+  return data.publicUrl
+}
+
+export async function createProperty(
+  property: Omit<Property, 'id' | 'created_at' | 'updated_at'>
+): Promise<Property> {
+  if (useMock()) {
+    const newProp: Property = {
+      ...property,
+      id: Date.now().toString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    MOCK_PROPERTIES.unshift(newProp)
+    return newProp
+  }
+  const sb = getSupabase()!
+  const { data, error } = await sb
+    .from('properties')
+    .insert([property])
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Insert returned no data')
+  return data
+}
+
+export async function updateProperty(
+  id: string,
+  property: Partial<Omit<Property, 'id' | 'created_at'>>
+): Promise<Property> {
+  if (useMock()) {
+    const idx = MOCK_PROPERTIES.findIndex(p => p.id === id)
+    if (idx === -1) throw new Error('Property not found')
+    MOCK_PROPERTIES[idx] = {
+      ...MOCK_PROPERTIES[idx],
+      ...property,
+      updated_at: new Date().toISOString(),
+    }
+    return MOCK_PROPERTIES[idx]
+  }
+  const sb = getSupabase()!
+  const { data, error } = await sb
+    .from('properties')
+    .update({ ...property, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Property not found')
+  return data
+}
+
+export async function deleteProperty(id: string): Promise<void> {
+  const sb = getSupabase()
+  if (!sb) {
+    const idx = MOCK_PROPERTIES.findIndex(p => p.id === id)
+    if (idx !== -1) MOCK_PROPERTIES.splice(idx, 1)
+    return
+  }
+  const { error } = await sb.from('properties').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Owner helpers ────────────────────────────────────────────────────────────
+export async function getOwners(): Promise<Owner[]> {
+  if (useMock()) return [...MOCK_OWNERS]
+  const sb = getSupabase()!
+  const { data, error } = await sb.from('owners').select('*').order('name')
+  if (error) throw error
+  return data || []
+}
+
+export async function createOwner(
+  owner: Omit<Owner, 'id' | 'created_at'>
+): Promise<Owner> {
+  if (useMock()) {
+    const newOwner: Owner = {
+      ...owner,
+      id: 'owner-' + Date.now(),
+      created_at: new Date().toISOString(),
+    }
+    MOCK_OWNERS.unshift(newOwner)
+    return newOwner
+  }
+  const sb = getSupabase()!
+  const { data, error } = await sb.from('owners').insert([owner]).select().maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Insert returned no data')
+  return data
+}
+
+export async function updateOwner(
+  id: string,
+  owner: Partial<Omit<Owner, 'id' | 'created_at'>>
+): Promise<Owner> {
+  if (useMock()) {
+    const idx = MOCK_OWNERS.findIndex(o => o.id === id)
+    if (idx === -1) throw new Error('Owner not found')
+    MOCK_OWNERS[idx] = { ...MOCK_OWNERS[idx], ...owner }
+    return MOCK_OWNERS[idx]
+  }
+  const sb = getSupabase()!
+  const { data, error } = await sb.from('owners').update(owner).eq('id', id).select().maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Owner not found')
+  return data
+}
+
+export async function deleteOwner(id: string): Promise<void> {
+  if (useMock()) {
+    const idx = MOCK_OWNERS.findIndex(o => o.id === id)
+    if (idx !== -1) MOCK_OWNERS.splice(idx, 1)
+    return
+  }
+  const sb = getSupabase()!
+  const { error } = await sb.from('owners').delete().eq('id', id)
+  if (error) throw error
 }

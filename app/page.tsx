@@ -1,12 +1,19 @@
 'use client'
 import Link from 'next/link'
-import { ArrowRight, Phone, MessageCircle } from 'lucide-react'
+import { ArrowRight, Phone, MessageCircle, Search } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import PropertyCard from '@/components/ui/PropertyCard'
 import { getProperties } from '@/lib/supabase'
 import { useEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Property } from '@/types'
+
+const TYPE_MAP: Record<string, string> = {
+  'คอนโด': 'condo',
+  'บ้านเดี่ยว': 'house',
+  'ทาวน์โฮม': 'townhome',
+}
 
 const MARQUEE_ITEMS = [
   'คอนโดให้เช่า', 'บ้านเดี่ยว', 'ทาวน์โฮม',
@@ -16,6 +23,7 @@ const MARQUEE_ITEMS = [
 
 export default function HomePage() {
   const revealRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -27,28 +35,102 @@ export default function HomePage() {
   }, [])
 
   const [featured, setFeatured] = useState<Property[]>([])
+  const [searchQ, setSearchQ] = useState('')
+  const [searchType, setSearchType] = useState('')
+  const [searchPrice, setSearchPrice] = useState('')
 
   useEffect(() => {
     getProperties({ status: 'available' })
       .then(data => setFeatured(data.slice(0, 3)))
   }, [])
 
+  function handleSearch() {
+    const params = new URLSearchParams()
+    if (searchQ) params.set('q', searchQ)
+    if (searchType) params.set('type', searchType)
+    if (searchPrice) params.set('maxPrice', searchPrice)
+    router.push(`/listings${params.toString() ? '?' + params.toString() : ''}`)
+  }
+
   return (
     <>
       <Navbar />
 
       {/* ── HERO ─────────────────────────────────────────────────── */}
-      <section className="min-h-screen grid grid-cols-1 lg:grid-cols-2 pt-16">
-        {/* Left */}
-        <div className="flex flex-col justify-center px-8 lg:px-16 py-20">
+      <section
+        className="relative flex flex-col items-center justify-center px-6 pt-28 pb-20 overflow-hidden"
+        style={{
+          minHeight: '100svh',
+          background: 'linear-gradient(160deg,#F5EFE6 0%,#EDE0CC 50%,#DECCAA 100%)',
+        }}
+      >
+        {/* Dot grid */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(107,68,35,0.18) 1.5px, transparent 1.5px)',
+            backgroundSize: '32px 32px',
+          }}
+        />
+
+        {/* Scattered background cards — decorative */}
+        <div className="absolute hidden lg:block pointer-events-none" style={{ top: '12%', left: '3%', transform: 'rotate(-7deg)', opacity: 0.35, filter: 'blur(1.5px)' }}>
+          <div className="rounded-2xl overflow-hidden" style={{ width: 160, background: 'white', boxShadow: '0 12px 32px rgba(44,24,16,0.14)' }}>
+            <div className="h-24 flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#D4C4A8,#C4A882)' }}>
+              <span className="text-3xl opacity-50">🏢</span>
+            </div>
+            <div className="p-3">
+              <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-light)' }}>คอนโด · ศรีราชา</div>
+              <div className="font-serif font-semibold text-xs mb-1" style={{ color: 'var(--brown)' }}>Atmoz Sriracha</div>
+              <div className="font-serif font-bold text-sm" style={{ color: 'var(--terracotta)' }}>฿8,000<span className="text-xs font-sans font-normal" style={{ color: 'var(--text-light)' }}>/เดือน</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute hidden lg:block pointer-events-none" style={{ bottom: '16%', left: '5%', transform: 'rotate(5deg)', opacity: 0.3, filter: 'blur(1.5px)' }}>
+          <div className="rounded-2xl overflow-hidden" style={{ width: 150, background: 'white', boxShadow: '0 12px 32px rgba(44,24,16,0.12)' }}>
+            <div className="h-20 flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#D4BCA8,#C49878)' }}>
+              <span className="text-3xl opacity-50">🏘️</span>
+            </div>
+            <div className="p-3">
+              <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-light)' }}>ทาวน์โฮม · แหลมฉบัง</div>
+              <div className="font-serif font-bold text-sm" style={{ color: 'var(--terracotta)' }}>฿12,000<span className="text-xs font-sans font-normal" style={{ color: 'var(--text-light)' }}>/เดือน</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute hidden lg:block pointer-events-none" style={{ top: '14%', right: '4%', transform: 'rotate(6deg)', opacity: 0.32, filter: 'blur(1.5px)' }}>
+          <div className="rounded-2xl overflow-hidden" style={{ width: 155, background: 'white', boxShadow: '0 12px 32px rgba(44,24,16,0.13)' }}>
+            <div className="h-22 flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#C8D4B8,#A8C498)', height: 88 }}>
+              <span className="text-3xl opacity-50">🏠</span>
+            </div>
+            <div className="p-3">
+              <div className="text-xs font-medium mb-0.5" style={{ color: 'var(--text-light)' }}>บ้านเดี่ยว · ชลบุรี</div>
+              <div className="font-serif font-bold text-sm" style={{ color: 'var(--terracotta)' }}>฿22,000<span className="text-xs font-sans font-normal" style={{ color: 'var(--text-light)' }}>/เดือน</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute hidden lg:block pointer-events-none" style={{ bottom: '20%', right: '4%', transform: 'rotate(-4deg)', opacity: 0.28, filter: 'blur(1.5px)' }}>
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl" style={{ background: 'white', boxShadow: '0 8px 20px rgba(44,24,16,0.12)' }}>
+            <span className="w-2 h-2 rounded-full" style={{ background: '#1a9070' }} />
+            <div>
+              <div className="text-xs font-semibold" style={{ color: '#1a9070' }}>ว่างพร้อมเข้าอยู่</div>
+              <div className="text-xs" style={{ color: 'var(--text-light)' }}>อัปเดตล่าสุดวันนี้</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Center content */}
+        <div className="relative z-10 w-full max-w-2xl mx-auto text-center">
+
           {/* Badge */}
           <div
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium tracking-widest uppercase mb-8 w-fit"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium tracking-widest uppercase mb-7"
             style={{
               background: 'rgba(135,168,120,0.15)',
               border: '1px solid rgba(135,168,120,0.35)',
               color: '#3B6D11',
-              animationDelay: '0s',
             }}
           >
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--sage)' }} />
@@ -56,84 +138,131 @@ export default function HomePage() {
           </div>
 
           <h1
-            className="font-serif leading-none mb-6"
-            style={{
-              fontSize: 'clamp(44px,5.5vw,72px)',
-              color: 'var(--brown)',
-            }}
+            className="font-serif leading-none mb-5"
+            style={{ fontSize: 'clamp(40px,5.5vw,70px)', color: 'var(--brown)' }}
           >
             ค้นหาบ้านเช่า<br />
             ที่<em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>ใช่สำหรับคุณ</em>
           </h1>
 
-          <p
-            className="text-lg font-light leading-relaxed mb-12 max-w-lg"
-            style={{ color: 'var(--text-mid)' }}
-          >
-            The Cozy Keys ดูแลทุกรายละเอียด ตั้งแต่การค้นหา ไปจนถึงวันที่คุณย้ายเข้า
-            คอนโด บ้าน ทาวน์โฮม ในย่านศรีราชา-แหลมฉบัง
+          <p className="text-base font-light mb-10 max-w-md mx-auto" style={{ color: 'var(--text-mid)' }}>
+            คอนโด บ้าน ทาวน์โฮม ในย่านศรีราชา–แหลมฉบัง ดูแลทุกรายละเอียดตั้งแต่ค้นหาจนถึงวันย้ายเข้า
           </p>
 
-          <div className="flex flex-wrap gap-4 items-center mb-16">
-            <Link
-              href="/listings"
-              className="inline-flex items-center gap-2 px-8 py-4 rounded-full text-white font-medium transition-all duration-200"
-              style={{ background: 'var(--terracotta)' }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'var(--terracotta-dark)'
-                e.currentTarget.style.boxShadow = '0 8px 24px rgba(196,98,45,0.35)'
-                e.currentTarget.style.transform = 'translateY(-2px)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'var(--terracotta)'
-                e.currentTarget.style.boxShadow = 'none'
-                e.currentTarget.style.transform = 'none'
-              }}
+          {/* ── Search bar ── */}
+          <div
+            className="rounded-2xl overflow-hidden mb-10"
+            style={{ background: 'white', boxShadow: '0 24px 64px rgba(44,24,16,0.14)' }}
+          >
+            {/* Type tabs */}
+            <div
+              className="flex gap-1 px-3 pt-3 pb-2"
+              style={{ borderBottom: '1px solid rgba(196,98,45,0.08)' }}
             >
-              ดูทรัพย์ทั้งหมด <ArrowRight size={16} />
-            </Link>
+              {(['ทั้งหมด', 'คอนโด', 'บ้านเดี่ยว', 'ทาวน์โฮม'] as const).map(tab => {
+                const val = tab === 'ทั้งหมด' ? '' : TYPE_MAP[tab]
+                const active = searchType === val
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setSearchType(val)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150"
+                    style={{
+                      background: active ? 'var(--terracotta)' : 'transparent',
+                      color: active ? 'white' : 'var(--text-mid)',
+                    }}
+                  >
+                    {tab}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Inputs */}
+            <div className="flex gap-2 p-3">
+              <div
+                className="flex-1 flex items-center gap-2 px-4 rounded-xl"
+                style={{ background: 'var(--cream)' }}
+              >
+                <Search size={14} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder="ทำเล หรือชื่อโครงการ..."
+                  value={searchQ}
+                  onChange={e => setSearchQ(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                  className="flex-1 bg-transparent text-sm outline-none py-3"
+                  style={{ color: 'var(--text-dark)' }}
+                />
+              </div>
+
+              <select
+                value={searchPrice}
+                onChange={e => setSearchPrice(e.target.value)}
+                className="px-4 py-3 rounded-xl text-sm outline-none"
+                style={{
+                  background: 'var(--cream)',
+                  color: searchPrice ? 'var(--text-dark)' : 'var(--text-light)',
+                  minWidth: 132,
+                  border: 'none',
+                }}
+              >
+                <option value="">ราคาสูงสุด</option>
+                <option value="8000">฿8,000 / เดือน</option>
+                <option value="12000">฿12,000 / เดือน</option>
+                <option value="20000">฿20,000 / เดือน</option>
+                <option value="30000">฿30,000 / เดือน</option>
+                <option value="50000">฿50,000+ / เดือน</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={handleSearch}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-medium text-sm transition-all duration-200 whitespace-nowrap"
+                style={{ background: 'var(--terracotta)' }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.background = 'var(--terracotta-dark)'
+                  e.currentTarget.style.boxShadow = '0 4px 16px rgba(196,98,45,0.4)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'var(--terracotta)'
+                  e.currentTarget.style.boxShadow = 'none'
+                }}
+              >
+                <Search size={15} /> ค้นหา
+              </button>
+            </div>
+          </div>
+
+          {/* Stats + quick links */}
+          <div className="flex flex-wrap items-center justify-center gap-8">
+            {[
+              { value: '50+', label: 'ทรัพย์ในระบบ' },
+              { value: '3', label: 'ทำเลหลัก' },
+              { value: 'ฟรี', label: 'สำหรับผู้เช่า' },
+            ].map(({ value, label }) => (
+              <div key={label} className="text-center">
+                <div className="font-serif text-2xl font-bold" style={{ color: 'var(--terracotta)' }}>{value}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>{label}</div>
+              </div>
+            ))}
+            <div style={{ width: 1, height: 36, background: 'rgba(196,98,45,0.15)' }} className="hidden sm:block" />
             <a
               href="tel:0876706436"
-              className="inline-flex items-center gap-2 px-6 py-4 rounded-full font-medium transition-all duration-200"
-              style={{ color: 'var(--brown)' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(107,68,35,0.08)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium border transition-all duration-200"
+              style={{ color: 'var(--brown)', borderColor: 'rgba(107,68,35,0.18)', background: 'rgba(255,255,255,0.7)' }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'white'
+                e.currentTarget.style.borderColor = 'rgba(107,68,35,0.35)'
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.7)'
+                e.currentTarget.style.borderColor = 'rgba(107,68,35,0.18)'
+              }}
             >
-              <Phone size={15} /> โทรปรึกษาฟรี
+              <Phone size={13} /> โทรปรึกษาฟรี
             </a>
-          </div>
-        </div>
-
-        {/* Right — hero visual */}
-        <div className="relative hidden lg:block" style={{ background: 'var(--cream-dark)', minHeight: 600 }}>
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg,#EDE6D6 0%,#D4C4A8 40%,#C4A882 100%)' }}
-          >
-            <span className="text-9xl opacity-20">🏠</span>
-          </div>
-
-          {/* Floating card */}
-          <div
-            className="absolute bottom-12 -left-8 rounded-2xl p-5 min-w-56"
-            style={{
-              background: 'white',
-              boxShadow: '0 20px 48px rgba(44,24,16,0.15)',
-            }}
-          >
-            <div
-              className="absolute top-4 right-4 w-2 h-2 rounded-full pulse-dot"
-              style={{ background: 'var(--sage)' }}
-            />
-            <div className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--text-light)' }}>
-              ว่างพร้อมเข้าอยู่
-            </div>
-            <div className="font-serif font-semibold mb-1" style={{ color: 'var(--brown)' }}>
-              Notting Hill Laemchabang
-            </div>
-            <div className="font-serif text-xl font-bold" style={{ color: 'var(--terracotta)' }}>
-              ฿12,000 <span className="text-xs font-sans font-normal" style={{ color: 'var(--text-light)' }}>/เดือน</span>
-            </div>
           </div>
         </div>
       </section>

@@ -44,9 +44,9 @@ export default function ContactPage() {
               <h2 className="font-serif text-2xl font-semibold mb-8" style={{ color: 'var(--brown)' }}>ช่องทางติดต่อ</h2>
               <div className="flex flex-col gap-5 mb-12">
                 {[
-                  { icon: <Phone size={18} />, label: 'K. Nut (คีย์)', val: '087 670 6436', href: 'tel:0876706436' },
+                  { icon: <Phone size={18} />, label: 'K. Nut (นัท)', val: '087 670 6436', href: 'tel:0876706436' },
                   { icon: <Phone size={18} />, label: 'K. Dear (เดียร์)', val: '098 091 5461', href: 'tel:0980915461' },
-                  { icon: <MessageCircle size={18} />, label: 'LINE Official', val: '@TheCozyKeys', href: 'https://lin.ee/ZhDShaPc' },
+                  { icon: <MessageCircle size={18} />, label: 'LINE Official', val: '@TheCozyKeys', href: '@thecozykeys' },
                   { icon: <MapPin size={18} />, label: 'พื้นที่ให้บริการ', val: 'ศรีราชา · แหลมฉบัง · ชลบุรี', href: null },
                   { icon: <Clock size={18} />, label: 'เวลาทำการ', val: 'จันทร์–อาทิตย์ 08:00–20:00', href: null },
                 ].map(({ icon, label, val, href }) => (
@@ -71,7 +71,7 @@ export default function ContactPage() {
               </div>
 
               <a
-                href="https://lin.ee/ZhDShaPc"
+                href="@thecozykeys"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-white font-medium transition-all duration-200"

@@ -62,3 +62,15 @@ body {
   50% { box-shadow: 0 0 0 7px rgba(135,168,120,0.08); }
 }
 .pulse-dot { animation: pulse-ring 2.5s ease infinite; }
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0% { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #ede6d6 25%, #f5f0e8 50%, #ede6d6 75%);
+  background-size: 1200px 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 0.5rem;
+}

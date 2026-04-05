@@ -2,10 +2,10 @@ import Link from 'next/link'
 import { MapPin, BedDouble, Bath, Square } from 'lucide-react'
 import type { Property } from '@/types'
 
-const STATUS_LABEL: Record<string, { label: string; color: string; bg: string }> = {
-  available: { label: 'ว่าง', color: '#0F6E56', bg: 'rgba(135,168,120,0.18)' },
-  reserved: { label: 'จองแล้ว', color: '#854F0B', bg: 'rgba(239,159,39,0.18)' },
-  rented: { label: 'เช่าแล้ว', color: '#A32D2D', bg: 'rgba(226,75,74,0.18)' },
+const STATUS_LABEL: Record<string, { label: string; color: string; bg: string; dot: string }> = {
+  available: { label: 'ว่างพร้อมเข้าอยู่', color: '#fff', bg: '#1a9070', dot: '#6ee7c4' },
+  reserved:  { label: 'จองแล้ว',           color: '#fff', bg: '#b86a0a', dot: '#fcd380' },
+  rented:    { label: 'เช่าแล้ว',           color: '#fff', bg: '#b52b2b', dot: '#f9a8a8' },
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -64,9 +64,17 @@ export default function PropertyCard({ property }: { property: Property }) {
 
           {/* Status badge */}
           <div
-            className="absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-medium"
-            style={{ background: status.bg, color: status.color }}
+            className="absolute top-3 left-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+            style={{
+              background: status.bg,
+              color: status.color,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+            }}
           >
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ background: status.dot }}
+            />
             {status.label}
           </div>
 

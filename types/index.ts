@@ -1,6 +1,17 @@
 export type PropertyType = 'condo' | 'house' | 'townhome'
 export type PropertyStatus = 'available' | 'reserved' | 'rented'
 
+export interface Owner {
+  id: string
+  name: string
+  phone: string
+  email?: string
+  line_id?: string
+  note?: string
+  source?: string
+  created_at: string
+}
+
 export interface Property {
   id: string
   title: string
@@ -16,8 +27,9 @@ export interface Property {
   province: string
   status: PropertyStatus
   images: string[]
-  amenities: string[]
   contact_line?: string
+  owner_id?: string
+  owner?: Owner
   created_at: string
   updated_at: string
 }

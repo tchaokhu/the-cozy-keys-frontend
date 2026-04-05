@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, BedDouble, Bath, Square, CheckCircle2, Phone, MessageCircle, Calendar } from 'lucide-react'
+import { ArrowLeft, MapPin, BedDouble, Bath, Square, Phone, MessageCircle, Calendar } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import { MOCK_PROPERTIES, createInquiry, getPropertyById } from '@/lib/supabase'
@@ -182,20 +182,6 @@ export default function PropertyDetailPage() {
                 </div>
               )}
 
-              {/* Amenities */}
-              {property.amenities.length > 0 && (
-                <div>
-                  <h2 className="font-serif text-xl font-semibold mb-4" style={{ color: 'var(--brown)' }}>สิ่งอำนวยความสะดวก</h2>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {property.amenities.map(a => (
-                      <div key={a} className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-mid)' }}>
-                        <CheckCircle2 size={14} style={{ color: 'var(--sage)', flexShrink: 0 }} />
-                        {a}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* RIGHT — contact form */}
@@ -301,7 +287,7 @@ export default function PropertyDetailPage() {
                           <Phone size={13} /> โทร
                         </a>
                         <a
-                          href="https://lin.ee/ZhDShaPc"
+                          href="@thecozykeys"
                           className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium border transition-all"
                           style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}
                         >

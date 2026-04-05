@@ -1,15 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Home, List, Bell, BarChart2, Plus, Eye, TrendingUp } from 'lucide-react'
+import { Plus, TrendingUp } from 'lucide-react'
 import { getProperties, MOCK_INQUIRIES } from '@/lib/supabase'
 import type { Property } from '@/types'
-
-const NAV = [
-  { icon: <BarChart2 size={18} />, label: 'ภาพรวม', href: '/admin/dashboard' },
-  { icon: <Home size={18} />, label: 'ทรัพย์ทั้งหมด', href: '/admin/properties' },
-  { icon: <Bell size={18} />, label: 'การติดต่อ', href: '/admin/inquiries' },
-]
+import AdminSidebar from '@/components/admin/AdminSidebar'
 
 export default function AdminDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
@@ -27,32 +22,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
-      {/* Sidebar */}
-      <aside className="w-64 shrink-0 border-r flex flex-col"
-        style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)', minHeight: '100vh' }}>
-        <div className="p-6 border-b" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
-          <div className="font-serif text-lg font-bold" style={{ color: 'var(--brown)' }}>
-            The Cozy <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>Admin Panel</div>
-        </div>
-        <nav className="p-4 flex flex-col gap-1 flex-1">
-          {NAV.map(({ icon, label, href }) => (
-            <Link key={href} href={href}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all"
-              style={{ color: href === '/admin/dashboard' ? 'var(--terracotta)' : 'var(--text-mid)',
-                background: href === '/admin/dashboard' ? 'rgba(196,98,45,0.08)' : 'transparent' }}>
-              {icon} {label}
-            </Link>
-          ))}
-        </nav>
-        <div className="p-4 border-t" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
-          <Link href="/" className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-center w-full transition-all"
-            style={{ background: 'var(--terracotta)', color: 'white' }}>
-            <Eye size={16} /> ดูหน้าเว็บ
-          </Link>
-        </div>
-      </aside>
+      <AdminSidebar />
 
       {/* Main */}
       <main className="flex-1 p-8 overflow-auto">
@@ -63,7 +33,7 @@ export default function AdminDashboard() {
               {new Date().toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </p>
           </div>
-          <Link href="/admin/properties"
+          <Link href="/admin/properties/new"
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-medium"
             style={{ background: 'var(--terracotta)' }}>
             <Plus size={16} /> เพิ่มทรัพย์

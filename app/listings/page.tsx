@@ -42,9 +42,10 @@ export default function ListingsPage() {
     bedrooms: '',
   })
   const [priceRange, setPriceRange] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getProperties().then(setAllProperties)
+    getProperties().then(data => { setAllProperties(data); setLoading(false) })
   }, [])
 
   // Apply filters
@@ -242,7 +243,28 @@ export default function ListingsPage() {
           </div>
 
           {/* Grid */}
-          {properties.length === 0 ? (
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="rounded-2xl overflow-hidden border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                  <div className="skeleton h-52 w-full rounded-none" />
+                  <div className="p-5 space-y-3">
+                    <div className="skeleton h-4 w-3/4" />
+                    <div className="skeleton h-3 w-1/2" />
+                    <div className="flex gap-3 pt-1">
+                      <div className="skeleton h-3 w-16" />
+                      <div className="skeleton h-3 w-16" />
+                      <div className="skeleton h-3 w-16" />
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="skeleton h-5 w-24" />
+                      <div className="skeleton h-8 w-20 rounded-xl" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : properties.length === 0 ? (
             <div className="text-center py-24">
               <div className="text-5xl mb-4 opacity-30">🏠</div>
               <div className="font-serif text-xl mb-2" style={{ color: 'var(--brown)' }}>ไม่พบทรัพย์</div>
