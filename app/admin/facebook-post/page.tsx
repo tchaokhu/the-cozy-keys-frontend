@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Search, Copy, Check, RefreshCw, Sparkles, Share2 } from 'lucide-react'
+import { Search, Copy, Check, RefreshCw, Sparkles, Share2, X } from 'lucide-react'
 import { getProperties } from '@/lib/supabase'
 import { fetchPropertyInfo } from './actions'
 import type { Property } from '@/types'
@@ -279,90 +279,136 @@ export default function FacebookPostPage() {
 
   const activePost = activeTab === 'th' ? postTH : postEN
 
+  const [showPicker, setShowPicker] = useState(false)
+
+  const propertyListContent = (
+    <>
+      <div className="p-4 border-b" style={{ borderColor: 'rgba(196,98,45,0.08)' }}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-serif font-semibold" style={{ color: 'var(--brown)' }}>
+            เลือกทรัพย์
+          </h2>
+          <button
+            type="button"
+            className="md:hidden p-1.5 rounded-lg"
+            style={{ color: 'var(--text-mid)' }}
+            onClick={() => setShowPicker(false)}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+          style={{ background: 'var(--cream)', border: '1px solid rgba(196,98,45,0.12)' }}>
+          <Search size={13} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
+          <input
+            type="text"
+            placeholder="ค้นหา..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="bg-transparent text-sm outline-none flex-1"
+            style={{ color: 'var(--text-dark)' }}
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-2">
+        {filtered.length === 0 ? (
+          <div className="text-center py-12 text-sm" style={{ color: 'var(--text-light)' }}>
+            ไม่พบทรัพย์
+          </div>
+        ) : (
+          filtered.map(p => {
+            const isSelected = selected?.id === p.id
+            const statusS = STATUS_STYLE[p.status]
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { setSelected(p); setShowPicker(false) }}
+                className="w-full text-left px-3 py-3 rounded-xl mb-1 transition-all"
+                style={{
+                  background: isSelected ? 'rgba(196,98,45,0.08)' : 'transparent',
+                  border: `1px solid ${isSelected ? 'rgba(196,98,45,0.25)' : 'transparent'}`,
+                }}
+                onMouseEnter={e => {
+                  if (!isSelected) e.currentTarget.style.background = 'var(--cream)'
+                }}
+                onMouseLeave={e => {
+                  if (!isSelected) e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                <div className="font-medium text-sm mb-1 leading-tight"
+                  style={{ color: isSelected ? 'var(--terracotta)' : 'var(--brown)' }}>
+                  {p.title}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs" style={{ color: 'var(--text-light)' }}>
+                    {p.district} · ฿{p.price_monthly.toLocaleString()}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                    style={{ background: statusS.bg, color: statusS.color }}>
+                    {statusS.label}
+                  </span>
+                </div>
+              </button>
+            )
+          })
+        )}
+      </div>
+    </>
+  )
+
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
 
       <AdminSidebar />
 
       {/* ── Main ── */}
-      <main className="flex-1 flex overflow-hidden" style={{ maxHeight: '100vh' }}>
+      <main className="flex-1 flex overflow-hidden pt-16 md:pt-0" style={{ maxHeight: '100vh' }}>
 
-        {/* Left — property selector */}
-        <div className="w-72 shrink-0 border-r flex flex-col"
+        {/* Desktop — property selector panel */}
+        <div className="hidden md:flex w-72 shrink-0 border-r flex-col"
           style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-          <div className="p-4 border-b" style={{ borderColor: 'rgba(196,98,45,0.08)' }}>
-            <h2 className="font-serif font-semibold mb-3" style={{ color: 'var(--brown)' }}>
-              เลือกทรัพย์
-            </h2>
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-              style={{ background: 'var(--cream)', border: '1px solid rgba(196,98,45,0.12)' }}>
-              <Search size={13} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
-              <input
-                type="text"
-                placeholder="ค้นหา..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="bg-transparent text-sm outline-none flex-1"
-                style={{ color: 'var(--text-dark)' }}
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2">
-            {filtered.length === 0 ? (
-              <div className="text-center py-12 text-sm" style={{ color: 'var(--text-light)' }}>
-                ไม่พบทรัพย์
-              </div>
-            ) : (
-              filtered.map(p => {
-                const isSelected = selected?.id === p.id
-                const statusS = STATUS_STYLE[p.status]
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setSelected(p)}
-                    className="w-full text-left px-3 py-3 rounded-xl mb-1 transition-all"
-                    style={{
-                      background: isSelected ? 'rgba(196,98,45,0.08)' : 'transparent',
-                      border: `1px solid ${isSelected ? 'rgba(196,98,45,0.25)' : 'transparent'}`,
-                    }}
-                    onMouseEnter={e => {
-                      if (!isSelected) e.currentTarget.style.background = 'var(--cream)'
-                    }}
-                    onMouseLeave={e => {
-                      if (!isSelected) e.currentTarget.style.background = 'transparent'
-                    }}
-                  >
-                    <div className="font-medium text-sm mb-1 leading-tight"
-                      style={{ color: isSelected ? 'var(--terracotta)' : 'var(--brown)' }}>
-                      {p.title}
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: 'var(--text-light)' }}>
-                        {p.district} · ฿{p.price_monthly.toLocaleString()}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                        style={{ background: statusS.bg, color: statusS.color }}>
-                        {statusS.label}
-                      </span>
-                    </div>
-                  </button>
-                )
-              })
-            )}
-          </div>
+          {propertyListContent}
         </div>
 
+        {/* Mobile — property picker overlay */}
+        {showPicker && (
+          <div className="md:hidden fixed inset-0 z-50" onClick={() => setShowPicker(false)}>
+            <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
+            <div
+              className="absolute inset-x-3 top-16 bottom-4 rounded-2xl flex flex-col shadow-xl overflow-hidden"
+              style={{ background: 'white', maxWidth: '95vw', margin: '0 auto' }}
+              onClick={e => e.stopPropagation()}
+            >
+              {propertyListContent}
+            </div>
+          </div>
+        )}
+
         {/* Right — form + output */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          {/* Mobile — select property button */}
+          <button
+            type="button"
+            onClick={() => setShowPicker(true)}
+            className="md:hidden w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium mb-4 border"
+            style={{
+              background: 'white',
+              borderColor: 'rgba(196,98,45,0.2)',
+              color: 'var(--terracotta)',
+            }}
+          >
+            <Search size={14} /> {selected ? 'เปลี่ยนทรัพย์' : 'เลือกทรัพย์'}
+          </button>
+
           {!selected ? (
             <div className="h-full flex flex-col items-center justify-center text-center">
               <Share2 size={40} style={{ color: 'rgba(196,98,45,0.25)', marginBottom: 16 }} />
               <div className="font-serif text-xl font-semibold mb-2" style={{ color: 'var(--brown)' }}>
                 เลือกทรัพย์เพื่อสร้างโพสต์
               </div>
-              <p className="text-sm" style={{ color: 'var(--text-light)' }}>
+              <p className="text-sm mb-4" style={{ color: 'var(--text-light)' }}>
                 เลือกทรัพย์จากรายการทางซ้ายเพื่อเริ่มสร้างโพสต์ Facebook
               </p>
             </div>
@@ -396,7 +442,7 @@ export default function FacebookPostPage() {
                   ข้อมูลเพิ่มเติม
                 </h3>
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   {/* Tagline TH */}
                   <div className="col-span-2">
                     <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>

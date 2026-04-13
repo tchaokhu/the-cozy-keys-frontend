@@ -46,7 +46,7 @@ export default function AdminProperties() {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ทรัพย์ทั้งหมด</h1>
@@ -81,83 +81,134 @@ export default function AdminProperties() {
           ))}
         </div>
 
-        {/* Table */}
-        <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-          <table className="w-full">
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(196,98,45,0.08)', background: 'var(--cream)' }}>
-                {['ทรัพย์', 'ประเภท', 'ทำเล', 'เจ้าของ', 'ราคา/เดือน', 'สถานะ', ''].map(h => (
-                  <th key={h} className="text-left px-5 py-3.5 text-xs font-medium" style={{ color: 'var(--text-light)' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((p: Property) => {
-                const s = STATUS_STYLE[p.status]
-                return (
-                  <tr key={p.id} className="border-b transition-colors"
-                    style={{ borderColor: 'rgba(196,98,45,0.06)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,240,232,0.5)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td className="px-5 py-4">
-                      <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-light)' }}>
-                        {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.
-                      </div>
-                    </td>
-                    <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{TYPE_LABEL[p.property_type]}</td>
-                    <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{p.district}</td>
-                    <td className="px-5 py-4">
-                      {p.owner ? (
-                        <div>
-                          <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>{p.owner.name}</div>
-                          {p.owner.source && (
-                            <div className="text-xs" style={{ color: 'var(--text-light)' }}>{p.owner.source}</div>
-                          )}
+        {/* Mobile Card View */}
+        <div className="block md:hidden space-y-3">
+          {filtered.map((p: Property) => {
+            const s = STATUS_STYLE[p.status]
+            return (
+              <div key={p.id} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
+                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>
+                      {TYPE_LABEL[p.property_type]} · {p.district}
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-full text-xs font-medium ml-2 shrink-0"
+                    style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                </div>
+                <div className="flex items-center justify-between mt-3">
+                  <div>
+                    <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
+                      ฿{p.price_monthly.toLocaleString()}
+                    </span>
+                    <span className="text-xs ml-1" style={{ color: 'var(--text-light)' }}>/เดือน</span>
+                  </div>
+                  <div className="text-xs" style={{ color: 'var(--text-light)' }}>
+                    {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.
+                  </div>
+                </div>
+                {p.owner && (
+                  <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
+                    <div className="text-xs" style={{ color: 'var(--text-light)' }}>เจ้าของ</div>
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>
+                      {p.owner.name}
+                      {p.owner.source && <span className="font-normal text-xs ml-1" style={{ color: 'var(--text-light)' }}>({p.owner.source})</span>}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-2 mt-3 pt-2" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
+                  <Link href={`/listings/${p.id}`} className="flex-1 text-center py-2 rounded-xl text-xs font-medium border"
+                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)' }}>ดู</Link>
+                  <Link href={`/admin/properties/${p.id}/edit`} className="flex-1 text-center py-2 rounded-xl text-xs font-medium border"
+                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)' }}>แก้ไข</Link>
+                  <button onClick={() => setDeleteId(p.id)} className="flex-1 text-center py-2 rounded-xl text-xs font-medium border"
+                    style={{ borderColor: 'rgba(220,38,38,0.2)', color: '#dc2626' }}>ลบ</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px]">
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(196,98,45,0.08)', background: 'var(--cream)' }}>
+                  {['ทรัพย์', 'ประเภท', 'ทำเล', 'เจ้าของ', 'ราคา/เดือน', 'สถานะ', ''].map(h => (
+                    <th key={h} className="text-left px-5 py-3.5 text-xs font-medium" style={{ color: 'var(--text-light)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((p: Property) => {
+                  const s = STATUS_STYLE[p.status]
+                  return (
+                    <tr key={p.id} className="border-b transition-colors"
+                      style={{ borderColor: 'rgba(196,98,45,0.06)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,240,232,0.5)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <td className="px-5 py-4">
+                        <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
+                        <div className="text-xs" style={{ color: 'var(--text-light)' }}>
+                          {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.
                         </div>
-                      ) : (
-                        <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
-                        ฿{p.price_monthly.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-medium"
-                        style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2">
-                        <Link href={`/listings/${p.id}`}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: 'var(--text-light)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                          <Eye size={15} />
-                        </Link>
-                        <Link href={`/admin/properties/${p.id}/edit`}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: 'var(--text-light)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                          <Edit2 size={15} />
-                        </Link>
-                        <button onClick={() => setDeleteId(p.id)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: 'var(--text-light)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{TYPE_LABEL[p.property_type]}</td>
+                      <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{p.district}</td>
+                      <td className="px-5 py-4">
+                        {p.owner ? (
+                          <div>
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>{p.owner.name}</div>
+                            {p.owner.source && (
+                              <div className="text-xs" style={{ color: 'var(--text-light)' }}>{p.owner.source}</div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
+                          ฿{p.price_monthly.toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium"
+                          style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex gap-2">
+                          <Link href={`/listings/${p.id}`}
+                            className="p-1.5 rounded-lg transition-colors"
+                            style={{ color: 'var(--text-light)' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                            <Eye size={15} />
+                          </Link>
+                          <Link href={`/admin/properties/${p.id}/edit`}
+                            className="p-1.5 rounded-lg transition-colors"
+                            style={{ color: 'var(--text-light)' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                            <Edit2 size={15} />
+                          </Link>
+                          <button onClick={() => setDeleteId(p.id)}
+                            className="p-1.5 rounded-lg transition-colors"
+                            style={{ color: 'var(--text-light)' }}
+                            onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
+                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </main>
 

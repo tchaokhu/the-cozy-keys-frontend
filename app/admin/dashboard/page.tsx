@@ -2,20 +2,22 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, TrendingUp } from 'lucide-react'
-import { getProperties, MOCK_INQUIRIES } from '@/lib/supabase'
-import type { Property } from '@/types'
+import { getProperties, getInquiries } from '@/lib/supabase'
+import type { Property, Inquiry } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 
 export default function AdminDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
+  const [inquiries, setInquiries] = useState<Inquiry[]>([])
 
   useEffect(() => {
     getProperties().then(setProperties)
+    getInquiries().then(setInquiries)
   }, [])
 
   const available = properties.filter(p => p.status === 'available').length
   const reserved = properties.filter(p => p.status === 'reserved').length
-  const newInquiries = MOCK_INQUIRIES.filter(i => i.status === 'new').length
+  const newInquiries = inquiries.filter(i => i.status === 'new').length
   const totalRevenue = properties
     .filter(p => p.status === 'rented')
     .reduce((sum, p) => sum + p.price_monthly, 0)
@@ -25,7 +27,7 @@ export default function AdminDashboard() {
       <AdminSidebar />
 
       {/* Main */}
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ภาพรวม</h1>
@@ -68,35 +70,41 @@ export default function AdminDashboard() {
             </Link>
           </div>
           <div className="divide-y" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
-            {MOCK_INQUIRIES.map(inq => {
-              const prop = properties.find(p => p.id === inq.property_id)
-              return (
-                <div key={inq.id} className="flex items-center justify-between px-6 py-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold"
-                      style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
-                      {inq.name[0]}
+            {inquiries.length === 0 ? (
+              <div className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-light)' }}>
+                ยังไม่มีการติดต่อ
+              </div>
+            ) : (
+              inquiries.slice(0, 5).map(inq => {
+                const prop = properties.find(p => p.id === inq.property_id)
+                return (
+                  <div key={inq.id} className="flex items-center justify-between px-6 py-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold"
+                        style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
+                        {inq.name[0]}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>{inq.name}</div>
+                        <div className="text-xs" style={{ color: 'var(--text-light)' }}>{prop?.title || '—'}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>{inq.name}</div>
-                      <div className="text-xs" style={{ color: 'var(--text-light)' }}>{prop?.title || '—'}</div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs" style={{ color: 'var(--text-light)' }}>
+                        {new Date(inq.created_at).toLocaleDateString('th-TH')}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-full text-xs font-medium"
+                        style={{
+                          background: inq.status === 'new' ? 'rgba(196,98,45,0.1)' : 'rgba(135,168,120,0.15)',
+                          color: inq.status === 'new' ? 'var(--terracotta)' : '#0F6E56',
+                        }}>
+                        {inq.status === 'new' ? 'ใหม่' : 'ติดต่อแล้ว'}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs" style={{ color: 'var(--text-light)' }}>
-                      {new Date(inq.created_at).toLocaleDateString('th-TH')}
-                    </span>
-                    <span className="px-2.5 py-1 rounded-full text-xs font-medium"
-                      style={{
-                        background: inq.status === 'new' ? 'rgba(196,98,45,0.1)' : 'rgba(135,168,120,0.15)',
-                        color: inq.status === 'new' ? 'var(--terracotta)' : '#0F6E56',
-                      }}>
-                      {inq.status === 'new' ? 'ใหม่' : 'ติดต่อแล้ว'}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </div>
       </main>

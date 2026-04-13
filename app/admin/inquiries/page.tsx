@@ -1,9 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { Phone, MessageCircle } from 'lucide-react'
-import { MOCK_INQUIRIES, getProperties } from '@/lib/supabase'
-import type { Property } from '@/types'
+import { getInquiries, getProperties, updateInquiryStatus } from '@/lib/supabase'
+import type { Property, Inquiry } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 
 const STATUS_STYLE = {
@@ -14,30 +13,41 @@ const STATUS_STYLE = {
 
 export default function AdminInquiries() {
   const [properties, setProperties] = useState<Property[]>([])
+  const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
     getProperties().then(setProperties)
+    getInquiries().then(setInquiries)
   }, [])
 
   const filtered = statusFilter
-    ? MOCK_INQUIRIES.filter(i => i.status === statusFilter)
-    : MOCK_INQUIRIES
+    ? inquiries.filter(i => i.status === statusFilter)
+    : inquiries
+
+  const markContacted = async (id: string) => {
+    try {
+      await updateInquiryStatus(id, 'contacted')
+      setInquiries(prev => prev.map(i => i.id === id ? { ...i, status: 'contacted' as const } : i))
+    } catch (e) {
+      alert('อัพเดทไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'))
+    }
+  }
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
         <div className="mb-8">
           <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>การติดต่อ</h1>
           <p className="text-sm font-light" style={{ color: 'var(--text-light)' }}>
-            {MOCK_INQUIRIES.filter(i => i.status === 'new').length} รายการใหม่
+            {inquiries.filter(i => i.status === 'new').length} รายการใหม่
           </p>
         </div>
 
         {/* Status filter */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-6 flex-wrap">
           {[
             { val: '', label: 'ทั้งหมด' },
             { val: 'new', label: 'ใหม่' },
@@ -58,76 +68,83 @@ export default function AdminInquiries() {
 
         {/* Cards */}
         <div className="flex flex-col gap-4">
-          {filtered.map(inq => {
-            const prop = properties.find(p => p.id === inq.property_id)
-            const s = STATUS_STYLE[inq.status]
-            return (
-              <div key={inq.id} className="rounded-2xl border p-5"
-                style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-                <div className="flex items-start justify-between gap-4 flex-wrap">
-                  <div className="flex items-center gap-4">
-                    <div className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
-                      style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
-                      {inq.name[0]}
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl border p-8 text-center" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+              <p className="text-sm" style={{ color: 'var(--text-light)' }}>ยังไม่มีการติดต่อ</p>
+            </div>
+          ) : (
+            filtered.map(inq => {
+              const prop = properties.find(p => p.id === inq.property_id)
+              const s = STATUS_STYLE[inq.status]
+              return (
+                <div key={inq.id} className="rounded-2xl border p-5"
+                  style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex items-center gap-4">
+                      <div className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold shrink-0"
+                        style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
+                        {inq.name[0]}
+                      </div>
+                      <div>
+                        <div className="font-medium" style={{ color: 'var(--text-dark)' }}>{inq.name}</div>
+                        <div className="text-sm" style={{ color: 'var(--text-light)' }}>{inq.phone}</div>
+                        {inq.email && <div className="text-xs" style={{ color: 'var(--text-light)' }}>{inq.email}</div>}
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-medium" style={{ color: 'var(--text-dark)' }}>{inq.name}</div>
-                      <div className="text-sm" style={{ color: 'var(--text-light)' }}>{inq.phone}</div>
-                      {inq.email && <div className="text-xs" style={{ color: 'var(--text-light)' }}>{inq.email}</div>}
+                    <div className="flex items-center gap-3">
+                      <span className="px-3 py-1 rounded-full text-xs font-medium"
+                        style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                      <span className="text-xs" style={{ color: 'var(--text-light)' }}>
+                        {new Date(inq.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="px-3 py-1 rounded-full text-xs font-medium"
-                      style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                    <span className="text-xs" style={{ color: 'var(--text-light)' }}>
-                      {new Date(inq.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                </div>
 
-                {prop && (
-                  <div className="mt-3 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
-                    style={{ background: 'var(--cream-dark)' }}>
-                    <span style={{ color: 'var(--text-mid)' }}>ทรัพย์: {prop.title}</span>
-                    <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
-                      ฿{prop.price_monthly.toLocaleString()}/เดือน
-                    </span>
-                  </div>
-                )}
-
-                {inq.message && (
-                  <p className="mt-3 text-sm font-light leading-relaxed" style={{ color: 'var(--text-mid)' }}>
-                    "{inq.message}"
-                  </p>
-                )}
-
-                {inq.preferred_date && (
-                  <div className="mt-2 text-xs" style={{ color: 'var(--text-light)' }}>
-                    วันที่นัดชม: {new Date(inq.preferred_date).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                  </div>
-                )}
-
-                <div className="flex gap-2 mt-4">
-                  <a href={`tel:${inq.phone.replace(/-/g, '')}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all"
-                    style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}>
-                    <Phone size={13} /> โทร {inq.phone}
-                  </a>
-                  <a href="@thecozykeys"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all"
-                    style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}>
-                    <MessageCircle size={13} /> LINE
-                  </a>
-                  {inq.status === 'new' && (
-                    <button className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-white"
-                      style={{ background: 'var(--terracotta)' }}>
-                      ทำเครื่องหมาย: ติดต่อแล้ว
-                    </button>
+                  {prop && (
+                    <div className="mt-3 px-3 py-2 rounded-xl text-sm flex items-center justify-between"
+                      style={{ background: 'var(--cream-dark)' }}>
+                      <span style={{ color: 'var(--text-mid)' }}>ทรัพย์: {prop.title}</span>
+                      <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
+                        ฿{prop.price_monthly.toLocaleString()}/เดือน
+                      </span>
+                    </div>
                   )}
+
+                  {inq.message && (
+                    <p className="mt-3 text-sm font-light leading-relaxed" style={{ color: 'var(--text-mid)' }}>
+                      &ldquo;{inq.message}&rdquo;
+                    </p>
+                  )}
+
+                  {inq.preferred_date && (
+                    <div className="mt-2 text-xs" style={{ color: 'var(--text-light)' }}>
+                      วันที่นัดชม: {new Date(inq.preferred_date).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mt-4 flex-wrap">
+                    <a href={`tel:${inq.phone.replace(/-/g, '')}`}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all"
+                      style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}>
+                      <Phone size={13} /> โทร {inq.phone}
+                    </a>
+                    <a href="@thecozykeys"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all"
+                      style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}>
+                      <MessageCircle size={13} /> LINE
+                    </a>
+                    {inq.status === 'new' && (
+                      <button onClick={() => markContacted(inq.id)}
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium text-white"
+                        style={{ background: 'var(--terracotta)' }}>
+                        ทำเครื่องหมาย: ติดต่อแล้ว
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
+              )
+            })
+          )}
         </div>
       </main>
     </div>

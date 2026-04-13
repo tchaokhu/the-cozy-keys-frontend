@@ -1,7 +1,9 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { BarChart2, Home, Bell, Share2, Eye, Users } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { BarChart2, Home, Bell, Share2, Eye, Users, Menu, X, LogOut } from 'lucide-react'
+import { signOut } from '@/lib/supabase'
 
 const NAV = [
   { icon: <BarChart2 size={18} />, label: 'ภาพรวม', href: '/admin/dashboard' },
@@ -13,23 +15,33 @@ const NAV = [
 
 export default function AdminSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
 
-  // Match active: exact for dashboard/facebook-post, prefix for properties/inquiries
   const isActive = (href: string) =>
     ['/admin/properties', '/admin/owners'].includes(href)
       ? pathname.startsWith(href)
       : pathname === href
 
-  return (
-    <aside
-      className="w-64 shrink-0 border-r flex flex-col"
-      style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)', minHeight: '100vh' }}
-    >
+  const handleLogout = async () => {
+    await signOut()
+    router.replace('/admin/login')
+  }
+
+  const sidebarContent = (
+    <>
       <div className="p-6 border-b" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
-        <div className="font-serif text-lg font-bold" style={{ color: 'var(--brown)' }}>
-          The Cozy <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-serif text-lg font-bold" style={{ color: 'var(--brown)' }}>
+              The Cozy <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>Admin Panel</div>
+          </div>
+          <button className="md:hidden p-1.5 rounded-lg" style={{ color: 'var(--text-mid)' }} onClick={() => setOpen(false)}>
+            <X size={20} />
+          </button>
         </div>
-        <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>Admin Panel</div>
       </div>
 
       <nav className="p-4 flex flex-col gap-1 flex-1">
@@ -39,6 +51,7 @@ export default function AdminSidebar() {
             <Link
               key={href}
               href={href}
+              onClick={() => setOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all"
               style={{
                 color: active ? 'var(--terracotta)' : 'var(--text-mid)',
@@ -51,15 +64,60 @@ export default function AdminSidebar() {
         })}
       </nav>
 
-      <div className="p-4 border-t" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
+      <div className="p-4 border-t space-y-2" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
         <Link
           href="/"
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm text-center w-full transition-all"
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm w-full transition-all"
           style={{ background: 'var(--terracotta)', color: 'white' }}
         >
           <Eye size={16} /> ดูหน้าเว็บ
         </Link>
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm w-full transition-all border"
+          style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)', background: 'transparent' }}
+        >
+          <LogOut size={16} /> ออกจากระบบ
+        </button>
       </div>
-    </aside>
+    </>
+  )
+
+  return (
+    <>
+      {/* Mobile top bar */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 border-b"
+        style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)' }}>
+        <div className="font-serif text-base font-bold" style={{ color: 'var(--brown)' }}>
+          The Cozy <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
+        </div>
+        <button onClick={() => setOpen(true)} className="p-2 rounded-xl" style={{ color: 'var(--text-mid)' }}>
+          <Menu size={22} />
+        </button>
+      </div>
+
+      {/* Mobile overlay + drawer */}
+      {open && (
+        <div className="md:hidden fixed inset-0 z-50" onClick={() => setOpen(false)}>
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
+          <aside
+            className="absolute top-0 left-0 bottom-0 w-72 flex flex-col shadow-xl"
+            style={{ background: 'white' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {sidebarContent}
+          </aside>
+        </div>
+      )}
+
+      {/* Desktop sidebar */}
+      <aside
+        className="hidden md:flex w-64 shrink-0 border-r flex-col"
+        style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)', minHeight: '100vh' }}
+      >
+        {sidebarContent}
+      </aside>
+    </>
   )
 }

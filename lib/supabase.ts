@@ -1,43 +1,45 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { Property, Inquiry, Owner } from '@/types'
 
-// Lazy init — ไม่ crash ถ้ายังไม่มี .env.local
 let _supabase: SupabaseClient | null = null
 
 function getSupabase() {
   if (_supabase) return _supabase
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) return null
+  if (!url || !key) throw new Error('Missing Supabase env vars')
   _supabase = createClient(url, key)
   return _supabase
 }
 
-const useMock = () => !process.env.NEXT_PUBLIC_SUPABASE_URL
+// ─── Auth ────────────────────────────────────────────────────────────────────
+export async function signIn(email: string, password: string) {
+  const sb = getSupabase()
+  const { data, error } = await sb.auth.signInWithPassword({ email, password })
+  if (error) throw error
+  return data
+}
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
-export const MOCK_OWNERS: Owner[] = [
-  {
-    id: 'owner-1',
-    name: 'สมศักดิ์ วงศ์ทอง',
-    phone: '081-234-5678',
-    email: 'somsak@email.com',
-    line_id: '@somsak',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 'owner-2',
-    name: 'นิตยา พรรณราย',
-    phone: '089-876-5432',
-    created_at: new Date().toISOString(),
-  },
-]
+export async function signOut() {
+  const sb = getSupabase()
+  const { error } = await sb.auth.signOut()
+  if (error) throw error
+}
 
-export const MOCK_PROPERTIES: Property[] = [];
+export async function getSession() {
+  const sb = getSupabase()
+  const { data: { session } } = await sb.auth.getSession()
+  return session
+}
 
-export const MOCK_INQUIRIES: Inquiry[] = []
+export function onAuthStateChange(callback: (session: unknown) => void) {
+  const sb = getSupabase()
+  return sb.auth.onAuthStateChange((_event, session) => {
+    callback(session)
+  })
+}
 
-// ─── API helpers ─────────────────────────────────────────────────────────────
+// ─── Properties ──────────────────────────────────────────────────────────────
 export async function getProperties(filters?: Partial<{
   district: string
   property_type: string
@@ -46,20 +48,7 @@ export async function getProperties(filters?: Partial<{
   bedrooms: number
   status: string
 }>): Promise<Property[]> {
-  console.log('USE_MOCK:', useMock())
-  console.log('URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
-  if (useMock()) {
-    let data = [...MOCK_PROPERTIES]
-    if (filters?.district) data = data.filter(p => p.district === filters.district)
-    if (filters?.property_type) data = data.filter(p => p.property_type === filters.property_type)
-    if (filters?.min_price) data = data.filter(p => p.price_monthly >= filters.min_price!)
-    if (filters?.max_price) data = data.filter(p => p.price_monthly <= filters.max_price!)
-    if (filters?.bedrooms) data = data.filter(p => p.bedrooms === filters.bedrooms)
-    if (filters?.status) data = data.filter(p => p.status === filters.status)
-    return data
-  }
-
-  const sb = getSupabase()!
+  const sb = getSupabase()
   let query = sb.from('properties').select('*').order('created_at', { ascending: false })
   if (filters?.district) query = query.eq('district', filters.district)
   if (filters?.property_type) query = query.eq('property_type', filters.property_type)
@@ -89,26 +78,21 @@ export async function getProperties(filters?: Partial<{
 }
 
 export async function getPropertyById(id: string): Promise<Property | null> {
-  if (useMock()) return MOCK_PROPERTIES.find(p => p.id === id) || null
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb.from('properties').select('*').eq('id', id).maybeSingle()
   if (error) return null
   return data
 }
 
+// ─── Inquiries ───────────────────────────────────────────────────────────────
 export async function createInquiry(inquiry: Omit<Inquiry, 'id' | 'status' | 'created_at'>): Promise<void> {
-  if (useMock()) {
-    console.log('Mock: inquiry submitted', inquiry)
-    return
-  }
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { error } = await sb.from('inquiries').insert([{ ...inquiry, status: 'new' }])
   if (error) throw error
 }
 
 export async function getInquiries(): Promise<Inquiry[]> {
-  if (useMock()) return MOCK_INQUIRIES
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb
     .from('inquiries')
     .select('*, property:properties(*)')
@@ -117,6 +101,13 @@ export async function getInquiries(): Promise<Inquiry[]> {
   return data || []
 }
 
+export async function updateInquiryStatus(id: string, status: string): Promise<void> {
+  const sb = getSupabase()
+  const { error } = await sb.from('inquiries').update({ status }).eq('id', id)
+  if (error) throw error
+}
+
+// ─── Images ──────────────────────────────────────────────────────────────────
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -128,13 +119,10 @@ function fileToDataUrl(file: File): Promise<string> {
 
 export async function uploadPropertyImage(file: File): Promise<string> {
   const sb = getSupabase()
-  if (!sb) return fileToDataUrl(file)
-
   const ext = file.name.split('.').pop()
   const path = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
   const { error } = await sb.storage.from('property-images').upload(path, file, { upsert: false })
   if (error) {
-    // bucket ไม่ได้ตั้งค่า — fallback เป็น data URL
     console.warn('Storage upload failed, falling back to data URL:', error.message)
     return fileToDataUrl(file)
   }
@@ -142,20 +130,11 @@ export async function uploadPropertyImage(file: File): Promise<string> {
   return data.publicUrl
 }
 
+// ─── Properties CRUD ─────────────────────────────────────────────────────────
 export async function createProperty(
   property: Omit<Property, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Property> {
-  if (useMock()) {
-    const newProp: Property = {
-      ...property,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
-    MOCK_PROPERTIES.unshift(newProp)
-    return newProp
-  }
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb
     .from('properties')
     .insert([property])
@@ -170,17 +149,7 @@ export async function updateProperty(
   id: string,
   property: Partial<Omit<Property, 'id' | 'created_at'>>
 ): Promise<Property> {
-  if (useMock()) {
-    const idx = MOCK_PROPERTIES.findIndex(p => p.id === id)
-    if (idx === -1) throw new Error('Property not found')
-    MOCK_PROPERTIES[idx] = {
-      ...MOCK_PROPERTIES[idx],
-      ...property,
-      updated_at: new Date().toISOString(),
-    }
-    return MOCK_PROPERTIES[idx]
-  }
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb
     .from('properties')
     .update({ ...property, updated_at: new Date().toISOString() })
@@ -194,19 +163,13 @@ export async function updateProperty(
 
 export async function deleteProperty(id: string): Promise<void> {
   const sb = getSupabase()
-  if (!sb) {
-    const idx = MOCK_PROPERTIES.findIndex(p => p.id === id)
-    if (idx !== -1) MOCK_PROPERTIES.splice(idx, 1)
-    return
-  }
   const { error } = await sb.from('properties').delete().eq('id', id)
   if (error) throw error
 }
 
-// ─── Owner helpers ────────────────────────────────────────────────────────────
+// ─── Owners ──────────────────────────────────────────────────────────────────
 export async function getOwners(): Promise<Owner[]> {
-  if (useMock()) return [...MOCK_OWNERS]
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb.from('owners').select('*').order('name')
   if (error) throw error
   return data || []
@@ -215,16 +178,7 @@ export async function getOwners(): Promise<Owner[]> {
 export async function createOwner(
   owner: Omit<Owner, 'id' | 'created_at'>
 ): Promise<Owner> {
-  if (useMock()) {
-    const newOwner: Owner = {
-      ...owner,
-      id: 'owner-' + Date.now(),
-      created_at: new Date().toISOString(),
-    }
-    MOCK_OWNERS.unshift(newOwner)
-    return newOwner
-  }
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb.from('owners').insert([owner]).select().maybeSingle()
   if (error) throw error
   if (!data) throw new Error('Insert returned no data')
@@ -235,13 +189,7 @@ export async function updateOwner(
   id: string,
   owner: Partial<Omit<Owner, 'id' | 'created_at'>>
 ): Promise<Owner> {
-  if (useMock()) {
-    const idx = MOCK_OWNERS.findIndex(o => o.id === id)
-    if (idx === -1) throw new Error('Owner not found')
-    MOCK_OWNERS[idx] = { ...MOCK_OWNERS[idx], ...owner }
-    return MOCK_OWNERS[idx]
-  }
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { data, error } = await sb.from('owners').update(owner).eq('id', id).select().maybeSingle()
   if (error) throw error
   if (!data) throw new Error('Owner not found')
@@ -249,12 +197,8 @@ export async function updateOwner(
 }
 
 export async function deleteOwner(id: string): Promise<void> {
-  if (useMock()) {
-    const idx = MOCK_OWNERS.findIndex(o => o.id === id)
-    if (idx !== -1) MOCK_OWNERS.splice(idx, 1)
-    return
-  }
-  const sb = getSupabase()!
+  const sb = getSupabase()
   const { error } = await sb.from('owners').delete().eq('id', id)
   if (error) throw error
 }
+

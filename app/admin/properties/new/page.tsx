@@ -82,7 +82,7 @@ export default function NewPropertyPage() {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
         <div className="flex items-center gap-4 mb-8">
           <Link href="/admin/properties"
             className="flex items-center gap-1.5 text-sm font-medium transition-colors"

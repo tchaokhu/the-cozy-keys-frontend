@@ -1,6 +1,6 @@
 function AdminSidebarSkeleton() {
   return (
-    <aside className="w-64 shrink-0 border-r flex flex-col"
+    <aside className="hidden md:flex w-64 shrink-0 border-r flex-col"
       style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)', minHeight: '100vh' }}>
       <div className="p-6 border-b" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
         <div className="skeleton h-5 w-32 mb-1.5" />
@@ -19,7 +19,7 @@ export default function DashboardLoading() {
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebarSkeleton />
-      <main className="flex-1 p-8 space-y-8">
+      <main className="flex-1 p-8 pt-20 md:pt-8 space-y-8">
         <div className="skeleton h-8 w-40" />
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">

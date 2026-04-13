@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, BedDouble, Bath, Square, Phone, MessageCircle, Calendar } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import { MOCK_PROPERTIES, createInquiry, getPropertyById } from '@/lib/supabase'
+import { createInquiry, getPropertyById } from '@/lib/supabase'
 import { Property } from '@/types'
 
 const STATUS_INFO = {
@@ -14,7 +14,6 @@ const STATUS_INFO = {
   rented: { label: 'เช่าแล้ว', color: '#A32D2D', bg: 'rgba(226,75,74,0.15)' },
 }
 
-const TYPE_LABEL = { condo: 'คอนโด', house: 'บ้านเดี่ยว', townhome: 'ทาวน์โฮม' }
 
 export default function PropertyDetailPage() {
   const params = useParams()
