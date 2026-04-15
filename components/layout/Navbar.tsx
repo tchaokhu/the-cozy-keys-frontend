@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useState, useEffect } from 'react'
 import { Menu, X } from 'lucide-react'
 
@@ -25,13 +26,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-6 lg:px-12 flex items-center justify-between h-16">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
-          <span
-            className="font-serif text-xl font-bold"
-            style={{ color: 'var(--brown)' }}
-          >
-            The Cozy{' '}
-            <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
-          </span>
+          <Image src="/logo.png" alt="The Cozy Keys" width={612} height={408} className="h-20 w-auto" />
         </Link>
 
         {/* Desktop links */}

@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Property, Inquiry, Owner } from '@/types'
+import type { Property, Inquiry, Owner, Building, ScheduledPost } from '@/types'
 
 let _supabase: SupabaseClient | null = null
 
@@ -29,7 +29,12 @@ export async function signOut() {
 export async function getSession() {
   const sb = getSupabase()
   const { data: { session } } = await sb.auth.getSession()
-  return session
+  if (session) return session
+
+  // Session expired or missing — try refreshing with the refresh token
+  const { data: { session: refreshed }, error } = await sb.auth.refreshSession()
+  if (error || !refreshed) return null
+  return refreshed
 }
 
 export function onAuthStateChange(callback: (session: unknown) => void) {
@@ -61,7 +66,7 @@ export async function getProperties(filters?: Partial<{
   if (error) throw error
   if (!props || props.length === 0) return []
 
-  // Manual join: fetch owners for properties that have owner_id
+  // Manual join: fetch owners and buildings
   const ownerIds = Array.from(new Set(props.map((p: Property) => p.owner_id).filter(Boolean))) as string[]
   let ownersMap: Record<string, Owner> = {}
   if (ownerIds.length > 0) {
@@ -71,9 +76,19 @@ export async function getProperties(filters?: Partial<{
     }
   }
 
+  const buildingIds = Array.from(new Set(props.map((p: Property) => p.building_id).filter(Boolean))) as string[]
+  let buildingsMap: Record<string, Building> = {}
+  if (buildingIds.length > 0) {
+    const { data: buildings } = await sb.from('buildings').select('*').in('id', buildingIds)
+    if (buildings) {
+      buildingsMap = Object.fromEntries(buildings.map((b: Building) => [b.id, b]))
+    }
+  }
+
   return props.map((p: Property) => ({
     ...p,
     owner: p.owner_id ? ownersMap[p.owner_id] : undefined,
+    buildingInfo: p.building_id ? buildingsMap[p.building_id] : undefined,
   }))
 }
 
@@ -130,6 +145,15 @@ export async function uploadPropertyImage(file: File): Promise<string> {
   return data.publicUrl
 }
 
+export async function deletePropertyImage(url: string): Promise<void> {
+  // Only delete from Storage if it's a Supabase Storage URL
+  const match = url.match(/\/storage\/v1\/object\/public\/property-images\/(.+)$/)
+  if (!match) return // data URL or external URL — nothing to delete
+  const sb = getSupabase()
+  const { error } = await sb.storage.from('property-images').remove([match[1]])
+  if (error) console.warn('Storage delete failed:', error.message)
+}
+
 // ─── Properties CRUD ─────────────────────────────────────────────────────────
 export async function createProperty(
   property: Omit<Property, 'id' | 'created_at' | 'updated_at'>
@@ -145,14 +169,26 @@ export async function createProperty(
   return data
 }
 
+// Only send columns that exist in the properties table
+const PROPERTY_COLUMNS = [
+  'title', 'title_en', 'description', 'price_monthly', 'property_type',
+  'bedrooms', 'bathrooms', 'area_sqm', 'floor', 'building', 'room_number',
+  'location', 'district', 'province', 'status', 'reserved_until', 'images', 'contact_line', 'owner_id', 'building_id',
+] as const
+
 export async function updateProperty(
   id: string,
   property: Partial<Omit<Property, 'id' | 'created_at'>>
 ): Promise<Property> {
   const sb = getSupabase()
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  const src = property as Record<string, unknown>
+  for (const col of PROPERTY_COLUMNS) {
+    if (col in src && src[col] !== undefined) payload[col] = src[col]
+  }
   const { data, error } = await sb
     .from('properties')
-    .update({ ...property, updated_at: new Date().toISOString() })
+    .update(payload)
     .eq('id', id)
     .select()
     .maybeSingle()
@@ -199,6 +235,95 @@ export async function updateOwner(
 export async function deleteOwner(id: string): Promise<void> {
   const sb = getSupabase()
   const { error } = await sb.from('owners').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Buildings ──────────────────────────────────────────────────────────────
+export async function getBuildings(): Promise<Building[]> {
+  const sb = getSupabase()
+  const { data, error } = await sb.from('buildings').select('*').order('name')
+  if (error) throw error
+  return data || []
+}
+
+export async function getBuildingById(id: string): Promise<Building | null> {
+  const sb = getSupabase()
+  const { data, error } = await sb.from('buildings').select('*').eq('id', id).maybeSingle()
+  if (error) return null
+  return data
+}
+
+export async function createBuilding(
+  building: Omit<Building, 'id' | 'created_at'>
+): Promise<Building> {
+  const sb = getSupabase()
+  const { data, error } = await sb.from('buildings').insert([building]).select().maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Insert returned no data')
+  return data
+}
+
+export async function updateBuilding(
+  id: string,
+  building: Partial<Omit<Building, 'id' | 'created_at'>>
+): Promise<Building> {
+  const sb = getSupabase()
+  const { data, error } = await sb.from('buildings').update(building).eq('id', id).select().maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Building not found')
+  return data
+}
+
+export async function deleteBuilding(id: string): Promise<void> {
+  const sb = getSupabase()
+  const { error } = await sb.from('buildings').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Scheduled Posts ────────────────────────────────────────────────────────
+export async function getScheduledPosts(): Promise<ScheduledPost[]> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('scheduled_posts')
+    .select('*, property:properties(*)')
+    .order('scheduled_date', { ascending: true })
+  if (error) throw error
+  return data || []
+}
+
+export async function createScheduledPost(
+  post: Omit<ScheduledPost, 'id' | 'created_at' | 'property'>
+): Promise<ScheduledPost> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('scheduled_posts')
+    .insert([post])
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Insert returned no data')
+  return data
+}
+
+export async function updateScheduledPost(
+  id: string,
+  updates: Partial<Pick<ScheduledPost, 'scheduled_date' | 'scheduled_time' | 'status' | 'fb_post_id' | 'post_content_th' | 'post_content_en' | 'images'>>
+): Promise<ScheduledPost> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('scheduled_posts')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Scheduled post not found')
+  return data
+}
+
+export async function deleteScheduledPost(id: string): Promise<void> {
+  const sb = getSupabase()
+  const { error } = await sb.from('scheduled_posts').delete().eq('id', id)
   if (error) throw error
 }
 

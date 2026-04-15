@@ -29,7 +29,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
     })
 
-    return () => subscription.unsubscribe()
+    // Refresh session every 10 minutes to prevent expiry during use
+    const refreshInterval = setInterval(() => {
+      getSession() // internally refreshes if expired
+    }, 10 * 60 * 1000)
+
+    return () => {
+      subscription.unsubscribe()
+      clearInterval(refreshInterval)
+    }
   }, [pathname, router])
 
   // Login page renders immediately; other pages wait for auth check

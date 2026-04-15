@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { BarChart2, Home, Bell, Share2, Eye, Users, Menu, X, LogOut } from 'lucide-react'
+import { BarChart2, Home, Bell, Share2, Eye, Users, Menu, X, LogOut, Calendar, Building2 } from 'lucide-react'
 import { signOut } from '@/lib/supabase'
 
 const NAV = [
@@ -10,7 +11,9 @@ const NAV = [
   { icon: <Home size={18} />, label: 'ทรัพย์ทั้งหมด', href: '/admin/properties' },
   { icon: <Bell size={18} />, label: 'การติดต่อ', href: '/admin/inquiries' },
   { icon: <Users size={18} />, label: 'จัดการเจ้าของ', href: '/admin/owners' },
+  { icon: <Building2 size={18} />, label: 'ตึก/โครงการ', href: '/admin/buildings' },
   { icon: <Share2 size={18} />, label: 'โพสต์ Facebook', href: '/admin/facebook-post' },
+  { icon: <Calendar size={18} />, label: 'ปฏิทินโพสต์', href: '/admin/calendar' },
 ]
 
 export default function AdminSidebar() {
@@ -19,7 +22,7 @@ export default function AdminSidebar() {
   const [open, setOpen] = useState(false)
 
   const isActive = (href: string) =>
-    ['/admin/properties', '/admin/owners'].includes(href)
+    ['/admin/properties', '/admin/owners', '/admin/buildings'].includes(href)
       ? pathname.startsWith(href)
       : pathname === href
 
@@ -33,9 +36,7 @@ export default function AdminSidebar() {
       <div className="p-6 border-b" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
         <div className="flex items-center justify-between">
           <div>
-            <div className="font-serif text-lg font-bold" style={{ color: 'var(--brown)' }}>
-              The Cozy <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
-            </div>
+            <Image src="/logo.png" alt="The Cozy Keys" width={612} height={408} className="h-20 w-auto" />
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>Admin Panel</div>
           </div>
           <button className="md:hidden p-1.5 rounded-lg" style={{ color: 'var(--text-mid)' }} onClick={() => setOpen(false)}>
@@ -89,9 +90,7 @@ export default function AdminSidebar() {
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-4 py-3 border-b"
         style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)' }}>
-        <div className="font-serif text-base font-bold" style={{ color: 'var(--brown)' }}>
-          The Cozy <em style={{ color: 'var(--terracotta)', fontStyle: 'italic' }}>Keys</em>
-        </div>
+        <Image src="/logo.png" alt="The Cozy Keys" width={612} height={408} className="h-10 w-auto" />
         <button onClick={() => setOpen(true)} className="p-2 rounded-xl" style={{ color: 'var(--text-mid)' }}>
           <Menu size={22} />
         </button>

@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import { Upload, Plus, X, GripVertical, ChevronUp, ChevronDown, Image as ImageIcon } from 'lucide-react'
-import { uploadPropertyImage } from '@/lib/supabase'
+import { uploadPropertyImage, deletePropertyImage } from '@/lib/supabase'
 
 interface Props {
   images: string[]
@@ -46,7 +46,10 @@ export default function ImageManager({ images, onChange }: Props) {
   }
 
   // ── Remove ───────────────────────────────────────────────────────────────
-  const remove = (i: number) => onChange(images.filter((_, idx) => idx !== i))
+  const remove = (i: number) => {
+    deletePropertyImage(images[i]) // fire-and-forget: delete from Storage if applicable
+    onChange(images.filter((_, idx) => idx !== i))
+  }
 
   // ── Move up / down ───────────────────────────────────────────────────────
   const move = (from: number, to: number) => {

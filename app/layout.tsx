@@ -5,6 +5,10 @@ export const metadata: Metadata = {
   title: 'The Cozy Keys | อสังหาฯ ให้เช่า ศรีราชา-แหลมฉบัง',
   description: 'ค้นหาคอนโด บ้าน ทาวน์โฮม ให้เช่าในศรีราชา แหลมฉบัง ชลบุรี ดูแลครบ จบในที่เดียว',
   keywords: ['คอนโดให้เช่า', 'ศรีราชา', 'แหลมฉบัง', 'ชลบุรี', 'บ้านเช่า'],
+  icons: {
+    icon: '/favicon-180.png',
+    apple: '/favicon-180.png',
+  },
   openGraph: {
     title: 'The Cozy Keys',
     description: 'อสังหาฯ ให้เช่า ศรีราชา-แหลมฉบัง',

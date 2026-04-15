@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 import { Phone, MessageCircle, MapPin } from 'lucide-react'
 
 export default function Footer() {
@@ -10,9 +11,8 @@ export default function Footer() {
 
           {/* Brand */}
           <div>
-            <div className="font-serif text-2xl font-bold mb-3" style={{ color: 'var(--cream)' }}>
-              The Cozy{' '}
-              <em style={{ color: 'var(--terracotta-light)', fontStyle: 'italic' }}>Keys</em>
+            <div className="mb-3">
+              <Image src="/logo.png" alt="The Cozy Keys" width={612} height={408} className="h-20 w-auto brightness-0 invert" />
             </div>
             <p className="text-sm font-light leading-relaxed mb-6" style={{ color: 'rgba(245,240,232,0.5)' }}>
               ที่ปรึกษาอสังหาริมทรัพย์ให้เช่า<br />

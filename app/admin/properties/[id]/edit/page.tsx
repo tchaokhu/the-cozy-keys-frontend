@@ -2,11 +2,12 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, User } from 'lucide-react'
-import { getPropertyById, updateProperty, getOwners } from '@/lib/supabase'
-import type { PropertyType, PropertyStatus, Owner } from '@/types'
+import { ArrowLeft, Save, User, Building2, Sparkles } from 'lucide-react'
+import { getPropertyById, updateProperty, getOwners, getBuildings } from '@/lib/supabase'
+import type { PropertyType, PropertyStatus, Owner, Building } from '@/types'
 import ImageManager from '@/components/admin/ImageManager'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import SearchableSelect from '@/components/admin/SearchableSelect'
 
 const FIELD = 'w-full px-4 py-2.5 rounded-xl text-sm border outline-none transition-colors'
 const FIELD_STYLE = { background: 'white', borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-dark)' }
@@ -23,8 +24,13 @@ export default function EditPropertyPage() {
 
   const [owners, setOwners] = useState<Owner[]>([])
   const [selectedOwnerId, setSelectedOwnerId] = useState('')
+  const [buildings, setBuildings] = useState<Building[]>([])
+  const [selectedBuildingId, setSelectedBuildingId] = useState('')
 
-  useEffect(() => { getOwners().then(setOwners) }, [])
+  useEffect(() => {
+    getOwners().then(setOwners)
+    getBuildings().then(setBuildings)
+  }, [])
 
   const [form, setForm] = useState({
     title: '',
@@ -35,10 +41,14 @@ export default function EditPropertyPage() {
     bedrooms: '1',
     bathrooms: '1',
     area_sqm: '',
+    floor: '',
+    building: '',
+    room_number: '',
     location: '',
     district: '',
     province: 'กรุงเทพมหานคร',
     status: 'available' as PropertyStatus,
+    reserved_until: '',
     images: [] as string[],
     contact_line: '',
   })
@@ -55,20 +65,59 @@ export default function EditPropertyPage() {
         bedrooms: String(p.bedrooms),
         bathrooms: String(p.bathrooms),
         area_sqm: String(p.area_sqm),
+        floor: p.floor ? String(p.floor) : '',
+        building: p.building || '',
+        room_number: p.room_number || '',
         location: p.location,
         district: p.district,
         province: p.province,
         status: p.status,
+        reserved_until: p.reserved_until || '',
         images: p.images || [],
         contact_line: p.contact_line || '',
       })
       if (p.owner_id) setSelectedOwnerId(p.owner_id)
+      if (p.building_id) setSelectedBuildingId(p.building_id)
       setLoading(false)
     })
   }, [id])
 
   const set = (field: string, value: unknown) =>
     setForm(f => ({ ...f, [field]: value }))
+
+  const generateDescription = () => {
+    const typeMap: Record<string, string> = { condo: 'คอนโด', house: 'บ้านเดี่ยว', townhome: 'ทาวน์โฮม' }
+    const typeName = typeMap[form.property_type] || 'ที่พัก'
+    const bld = buildings.find(b => b.id === selectedBuildingId)
+
+    const lines: string[] = []
+
+    const namePart = form.building ? ` ${form.building}` : ''
+    const projectPart = bld ? ` โครงการ${bld.name}` : ''
+    const locationPart = form.district ? ` ${form.district}` : ''
+    lines.push(`${typeName}${namePart}${projectPart}${locationPart} ให้เช่า`)
+
+    const specs: string[] = []
+    if (form.area_sqm) specs.push(`พื้นที่ ${form.area_sqm} ตร.ม.`)
+    specs.push(`${form.bedrooms} ห้องนอน ${form.bathrooms} ห้องน้ำ`)
+    if (form.floor) specs.push(`ชั้น ${form.floor}`)
+    if (form.room_number) specs.push(`ห้อง ${form.room_number}`)
+    lines.push(specs.join(' / '))
+
+    if (form.price_monthly) {
+      lines.push(`ค่าเช่า ${Number(form.price_monthly).toLocaleString()} บาท/เดือน`)
+    }
+
+    if (bld && bld.facilities.length > 0) {
+      lines.push(`\nสิ่งอำนวยความสะดวก: ${bld.facilities.join(', ')}`)
+    }
+
+    if (bld && bld.nearby.length > 0) {
+      lines.push(`\nสถานที่ใกล้เคียง:\n${bld.nearby.map(n => `- ${n}`).join('\n')}`)
+    }
+
+    set('description', lines.join('\n'))
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,13 +137,18 @@ export default function EditPropertyPage() {
         bedrooms: Number(form.bedrooms),
         bathrooms: Number(form.bathrooms),
         area_sqm: Number(form.area_sqm),
+        floor: form.floor ? Number(form.floor) : undefined,
+        building: form.building || undefined,
+        room_number: form.room_number || undefined,
         location: form.location,
         district: form.district,
         province: form.province,
         status: form.status,
+        reserved_until: form.status === 'reserved' && form.reserved_until ? form.reserved_until : undefined,
         images: form.images,
         contact_line: form.contact_line || undefined,
         owner_id: selectedOwnerId || undefined,
+        building_id: selectedBuildingId || undefined,
       })
       router.push('/admin/properties')
     } catch (err) {
@@ -156,9 +210,17 @@ export default function EditPropertyPage() {
                     onChange={e => set('title_en', e.target.value)} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>รายละเอียด</label>
-                  <textarea className={FIELD} style={FIELD_STYLE} rows={4} value={form.description}
-                    onChange={e => set('description', e.target.value)} />
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium" style={{ color: 'var(--text-mid)' }}>รายละเอียด</label>
+                    <button type="button" onClick={generateDescription}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors hover:opacity-80"
+                      style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
+                      <Sparkles size={12} /> สร้างอัตโนมัติ
+                    </button>
+                  </div>
+                  <textarea className={FIELD} style={FIELD_STYLE} rows={6} value={form.description}
+                    onChange={e => set('description', e.target.value)}
+                    placeholder={"กดปุ่ม \"สร้างอัตโนมัติ\" เพื่อสร้างจากข้อมูลที่กรอก\nหรือพิมพ์เอง เช่น:\n- สภาพห้อง, เฟอร์นิเจอร์\n- จุดเด่น, วิว\n- เงื่อนไขการเช่า"} />
                 </div>
               </div>
             </section>
@@ -200,6 +262,13 @@ export default function EditPropertyPage() {
                     <option value="rented">เช่าแล้ว</option>
                   </select>
                 </div>
+                {form.status === 'reserved' && (
+                  <div>
+                    <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>จองถึงวันที่</label>
+                    <input type="date" className={FIELD} style={FIELD_STYLE} value={form.reserved_until}
+                      onChange={e => set('reserved_until', e.target.value)} />
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>จำนวนห้องนอน</label>
                   <select className={FIELD} style={FIELD_STYLE} value={form.bedrooms}
@@ -213,6 +282,21 @@ export default function EditPropertyPage() {
                     onChange={e => set('bathrooms', e.target.value)}>
                     {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n} ห้อง</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>ตึก/อาคาร</label>
+                  <input className={FIELD} style={FIELD_STYLE} value={form.building}
+                    onChange={e => set('building', e.target.value)} placeholder="เช่น Tower A" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>ชั้น</label>
+                  <input type="number" min="1" className={FIELD} style={FIELD_STYLE} value={form.floor}
+                    onChange={e => set('floor', e.target.value)} placeholder="เช่น 15" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เลขห้อง</label>
+                  <input className={FIELD} style={FIELD_STYLE} value={form.room_number}
+                    onChange={e => set('room_number', e.target.value)} placeholder="เช่น 1502" />
                 </div>
               </div>
             </section>
@@ -266,15 +350,40 @@ export default function EditPropertyPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เลือกเจ้าของ</label>
-                <select className={FIELD} style={FIELD_STYLE}
-                  value={selectedOwnerId} onChange={e => setSelectedOwnerId(e.target.value)}>
-                  <option value="">— ไม่ระบุเจ้าของ —</option>
-                  {owners.map(o => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}{o.phone ? ` (${o.phone})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  value={selectedOwnerId}
+                  onChange={setSelectedOwnerId}
+                  placeholder="— เลือกเจ้าของ —"
+                  emptyLabel="— ไม่ระบุเจ้าของ —"
+                  searchPlaceholder="ค้นหาชื่อ, เบอร์โทร..."
+                  options={owners.map(o => ({ value: o.id, label: o.name, sub: o.phone || undefined }))}
+                />
+              </div>
+            </section>
+
+            {/* Building */}
+            <section className="rounded-2xl border p-6 space-y-4"
+              style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 size={16} style={{ color: 'var(--terracotta)' }} />
+                  <h2 className="font-serif font-semibold" style={{ color: 'var(--brown)' }}>ตึก/โครงการ</h2>
+                </div>
+                <Link href="/admin/buildings" target="_blank"
+                  className="text-xs" style={{ color: 'var(--terracotta)' }}>
+                  + จัดการโครงการ
+                </Link>
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เลือกโครงการ</label>
+                <SearchableSelect
+                  value={selectedBuildingId}
+                  onChange={setSelectedBuildingId}
+                  placeholder="— เลือกโครงการ —"
+                  emptyLabel="— ไม่ระบุโครงการ —"
+                  searchPlaceholder="ค้นหาชื่อโครงการ, ทำเล..."
+                  options={buildings.map(b => ({ value: b.id, label: b.name, sub: b.district || undefined }))}
+                />
               </div>
             </section>
 

@@ -91,7 +91,7 @@ export default function AdminProperties() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm truncate" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
                     <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>
-                      {TYPE_LABEL[p.property_type]} · {p.district}
+                      {TYPE_LABEL[p.property_type]} · {p.district}{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
                     </div>
                   </div>
                   <span className="px-2.5 py-1 rounded-full text-xs font-medium ml-2 shrink-0"
@@ -105,7 +105,7 @@ export default function AdminProperties() {
                     <span className="text-xs ml-1" style={{ color: 'var(--text-light)' }}>/เดือน</span>
                   </div>
                   <div className="text-xs" style={{ color: 'var(--text-light)' }}>
-                    {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.
+                    {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
                   </div>
                 </div>
                 {p.owner && (
@@ -152,7 +152,7 @@ export default function AdminProperties() {
                       <td className="px-5 py-4">
                         <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
                         <div className="text-xs" style={{ color: 'var(--text-light)' }}>
-                          {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.
+                          {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
                         </div>
                       </td>
                       <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{TYPE_LABEL[p.property_type]}</td>
@@ -175,7 +175,7 @@ export default function AdminProperties() {
                         </span>
                       </td>
                       <td className="px-5 py-4">
-                        <span className="px-2.5 py-1 rounded-full text-xs font-medium"
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
                           style={{ background: s.bg, color: s.color }}>{s.label}</span>
                       </td>
                       <td className="px-5 py-4">
