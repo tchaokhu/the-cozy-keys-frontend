@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Edit2, Eye, Trash2 } from 'lucide-react'
+import { Plus, Search, Edit2, Eye, Trash2, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { getProperties, deleteProperty } from '@/lib/supabase'
 import type { Property } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
@@ -12,6 +12,19 @@ const STATUS_STYLE = {
   rented: { label: 'เช่าแล้ว', color: '#A32D2D', bg: 'rgba(226,75,74,0.15)' },
 }
 const TYPE_LABEL = { condo: 'คอนโด', house: 'บ้านเดี่ยว', townhome: 'ทาวน์โฮม' }
+const STATUS_ORDER = { available: 0, reserved: 1, rented: 2 }
+
+type SortKey = 'title' | 'property_type' | 'district' | 'owner' | 'price_monthly' | 'status'
+type SortDir = 'asc' | 'desc'
+
+const COLUMNS: { key: SortKey; label: string }[] = [
+  { key: 'title', label: 'ทรัพย์' },
+  { key: 'property_type', label: 'ประเภท' },
+  { key: 'district', label: 'ทำเล' },
+  { key: 'owner', label: 'เจ้าของ' },
+  { key: 'price_monthly', label: 'ราคา/เดือน' },
+  { key: 'status', label: 'สถานะ' },
+]
 
 export default function AdminProperties() {
   const [properties, setProperties] = useState<Property[]>([])
@@ -19,9 +32,25 @@ export default function AdminProperties() {
   const [statusFilter, setStatusFilter] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [loading, setLoading] = useState(true)
+  const perPage = 10
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc')
+      else { setSortKey(null); setSortDir('asc') }
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+    setCurrentPage(1)
+  }
 
   useEffect(() => {
-    getProperties().then(setProperties)
+    getProperties().then(data => { setProperties(data); setLoading(false) })
   }, [])
 
   const confirmDelete = async () => {
@@ -42,11 +71,33 @@ export default function AdminProperties() {
   if (search) filtered = filtered.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || p.district.includes(search))
   if (statusFilter) filtered = filtered.filter(p => p.status === statusFilter)
 
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'title': cmp = a.title.localeCompare(b.title, 'th'); break
+        case 'property_type': cmp = (TYPE_LABEL[a.property_type] || '').localeCompare(TYPE_LABEL[b.property_type] || '', 'th'); break
+        case 'district': cmp = (a.district || '').localeCompare(b.district || '', 'th'); break
+        case 'owner': cmp = (a.owner?.name || '').localeCompare(b.owner?.name || '', 'th'); break
+        case 'price_monthly': cmp = a.price_monthly - b.price_monthly; break
+        case 'status': cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]; break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginated = filtered.slice((safePage - 1) * perPage, safePage * perPage)
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setCurrentPage(1) }, [search, statusFilter])
+
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pb-12 pt-20 md:pt-8 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ทรัพย์ทั้งหมด</h1>
@@ -83,7 +134,26 @@ export default function AdminProperties() {
 
         {/* Mobile Card View */}
         <div className="block md:hidden space-y-3">
-          {filtered.map((p: Property) => {
+          {loading ? Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="skeleton h-4 w-3/4" />
+                  <div className="skeleton h-3 w-1/2" />
+                </div>
+                <div className="skeleton h-6 w-16 rounded-full ml-2" />
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <div className="skeleton h-5 w-24" />
+                <div className="skeleton h-3 w-32" />
+              </div>
+              <div className="flex gap-2 mt-3 pt-2" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
+                <div className="skeleton h-8 flex-1 rounded-xl" />
+                <div className="skeleton h-8 flex-1 rounded-xl" />
+                <div className="skeleton h-8 flex-1 rounded-xl" />
+              </div>
+            </div>
+          )) : paginated.map((p: Property) => {
             const s = STATUS_STYLE[p.status]
             return (
               <div key={p.id} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
@@ -131,18 +201,74 @@ export default function AdminProperties() {
         </div>
 
         {/* Desktop Table */}
+        {loading ? (
         <div className="hidden md:block rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px]">
               <thead>
-                <tr style={{ borderBottom: '1px solid rgba(196,98,45,0.08)', background: 'var(--cream)' }}>
-                  {['ทรัพย์', 'ประเภท', 'ทำเล', 'เจ้าของ', 'ราคา/เดือน', 'สถานะ', ''].map(h => (
-                    <th key={h} className="text-left px-5 py-3.5 text-xs font-medium" style={{ color: 'var(--text-light)' }}>{h}</th>
+                <tr style={{ borderBottom: '2px solid rgba(196,98,45,0.12)', background: 'var(--terracotta)' }}>
+                  {COLUMNS.map(col => (
+                    <th key={col.key} className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider" style={{ color: '#fff' }}>
+                      {col.label}
+                    </th>
                   ))}
+                  <th className="px-5 py-3.5" style={{ background: 'var(--terracotta)' }} />
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p: Property) => {
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="border-b" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
+                    <td className="px-5 py-4">
+                      <div className="space-y-2">
+                        <div className="skeleton h-4 w-40" />
+                        <div className="skeleton h-3 w-28" />
+                      </div>
+                    </td>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-16 mx-auto" /></td>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-20 mx-auto" /></td>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-24 mx-auto" /></td>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-20 mx-auto" /></td>
+                    <td className="px-5 py-4"><div className="skeleton h-6 w-16 rounded-full mx-auto" /></td>
+                    <td className="px-5 py-4">
+                      <div className="flex gap-2 justify-center">
+                        <div className="skeleton h-7 w-7 rounded-lg" />
+                        <div className="skeleton h-7 w-7 rounded-lg" />
+                        <div className="skeleton h-7 w-7 rounded-lg" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        ) : (
+        <div className="hidden md:block rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px]">
+              <thead>
+                <tr style={{ borderBottom: '2px solid rgba(196,98,45,0.12)', background: 'var(--terracotta)' }}>
+                  {COLUMNS.map(col => {
+                    const active = sortKey === col.key
+                    return (
+                      <th key={col.key}
+                        className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider select-none transition-colors"
+                        style={{ color: '#fff', cursor: 'pointer' }}
+                        onClick={() => toggleSort(col.key)}>
+                        <span className="inline-flex items-center justify-center gap-1.5">
+                          {col.label}
+                          {active
+                            ? (sortDir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />)
+                            : <ArrowUpDown size={13} className="opacity-50" />}
+                        </span>
+                      </th>
+                    )
+                  })}
+                  <th className="px-5 py-3.5" style={{ background: 'var(--terracotta)' }} />
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map((p: Property) => {
                   const s = STATUS_STYLE[p.status]
                   return (
                     <tr key={p.id} className="border-b transition-colors"
@@ -209,7 +335,39 @@ export default function AdminProperties() {
               </tbody>
             </table>
           </div>
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
+            <p className="text-xs" style={{ color: 'var(--text-light)' }}>
+              แสดง {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, filtered.length)} จาก {filtered.length} รายการ
+            </p>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                className="p-2 rounded-lg border transition-colors disabled:opacity-30"
+                style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)', background: 'white' }}>
+                <ChevronLeft size={15} />
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                <button key={page} onClick={() => setCurrentPage(page)}
+                  className="w-9 h-9 rounded-lg text-sm font-medium transition-colors"
+                  style={{
+                    background: page === safePage ? 'var(--terracotta)' : 'white',
+                    color: page === safePage ? 'white' : 'var(--text-mid)',
+                    border: page === safePage ? 'none' : '1px solid rgba(196,98,45,0.15)',
+                  }}>
+                  {page}
+                </button>
+              ))}
+              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                className="p-2 rounded-lg border transition-colors disabled:opacity-30"
+                style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)', background: 'white' }}>
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+        )}
         </div>
+        )}
       </main>
 
       {/* Delete confirm dialog */}

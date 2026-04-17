@@ -179,3 +179,55 @@ export async function fetchPropertyInfo(title: string, district: string, provinc
     nearby: (data.nearby as string[]) ?? [],
   }
 }
+
+export async function translateFacilitiesAndNearby(
+  facilityLines: string[],
+  nearbyLines: string[]
+): Promise<{ facilitiesEN: string[]; nearbyEN: string[] }> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    return { facilitiesEN: facilityLines, nearbyEN: nearbyLines }
+  }
+
+  if (facilityLines.length === 0 && nearbyLines.length === 0) {
+    return { facilitiesEN: [], nearbyEN: [] }
+  }
+
+  const prompt = `You are a translator. Translate ALL Thai text below into English. The output MUST be 100% in English — no Thai characters allowed.
+
+Rules:
+- Translate Thai words to English (e.g. "สระว่ายน้ำ" → "Swimming Pool", "ฟิตเนส" → "Fitness Center", "ที่จอดรถ" → "Parking", "ลิฟต์" → "Elevator")
+- If an item has both Thai and English (e.g. "สระว่ายน้ำ (Infinity Pool)"), use only the English version
+- Keep proper nouns as-is (Robinson, Samitivej, etc.)
+- Convert "กม." to "km" and "เมตร" to "m"
+- Return ONLY JSON, no markdown, no explanation
+
+Facilities to translate:
+${facilityLines.map((f, i) => `${i + 1}. ${f}`).join('\n') || '(none)'}
+
+Nearby places to translate:
+${nearbyLines.map((n, i) => `${i + 1}. ${n}`).join('\n') || '(none)'}
+
+Output format:
+{"facilitiesEN": ["English text 1", "English text 2"], "nearbyEN": ["English text 1", "English text 2"]}
+
+If input is (none), return empty array [].`
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      generationConfig: { temperature: 0 },
+    })
+    const result = await model.generateContent(prompt)
+    const text = result.response.text().trim()
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
+    const data = JSON.parse(cleaned)
+
+    return {
+      facilitiesEN: (data.facilitiesEN as string[]) ?? facilityLines,
+      nearbyEN: (data.nearbyEN as string[]) ?? nearbyLines,
+    }
+  } catch {
+    return { facilitiesEN: facilityLines, nearbyEN: nearbyLines }
+  }
+}

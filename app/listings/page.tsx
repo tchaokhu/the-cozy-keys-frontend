@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { Search, SlidersHorizontal, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import PropertyCard from '@/components/ui/PropertyCard'
@@ -43,6 +43,8 @@ export default function ListingsPage() {
   })
   const [priceRange, setPriceRange] = useState('')
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const perPage = 12
 
   useEffect(() => {
     getProperties().then(data => { setAllProperties(data); setLoading(false) })
@@ -70,6 +72,7 @@ export default function ListingsPage() {
     })
 
     setProperties(result)
+    setCurrentPage(1)
   }, [filters, search, allProperties])
 
   const handlePrice = (val: string) => {
@@ -243,6 +246,11 @@ export default function ListingsPage() {
           </div>
 
           {/* Grid */}
+          {(() => {
+            const totalPages = Math.max(1, Math.ceil(properties.length / perPage))
+            const safePage = Math.min(currentPage, totalPages)
+            const paginated = properties.slice((safePage - 1) * perPage, safePage * perPage)
+            return <>
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -280,12 +288,44 @@ export default function ListingsPage() {
               </button>
             </div>
           ) : (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-7">
-              {properties.map(p => (
+              {paginated.map(p => (
                 <PropertyCard key={p.id} property={p} />
               ))}
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-12">
+                <button onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  disabled={safePage === 1}
+                  className="p-2.5 rounded-xl border transition-colors disabled:opacity-30"
+                  style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-mid)', background: 'white' }}>
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                  <button key={page} onClick={() => { setCurrentPage(page); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                    className="w-10 h-10 rounded-xl text-sm font-medium transition-colors"
+                    style={{
+                      background: page === safePage ? 'var(--terracotta)' : 'white',
+                      color: page === safePage ? 'white' : 'var(--text-mid)',
+                      border: page === safePage ? 'none' : '1px solid rgba(196,98,45,0.2)',
+                    }}>
+                    {page}
+                  </button>
+                ))}
+                <button onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                  disabled={safePage === totalPages}
+                  className="p-2.5 rounded-xl border transition-colors disabled:opacity-30"
+                  style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-mid)', background: 'white' }}>
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+            </>
           )}
+          </>; })()}
         </div>
       </div>
       <Footer />

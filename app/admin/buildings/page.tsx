@@ -1,15 +1,19 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Plus, Search, Edit2, Trash2, X, ChevronDown, ChevronUp, Building2 } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, ChevronDown, ChevronUp, Building2, MapPin, ExternalLink } from 'lucide-react'
 import { getBuildings, createBuilding, updateBuilding, deleteBuilding } from '@/lib/supabase'
 import type { Building } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+
+const DISTRICT_OPTIONS = ['ศรีราชา', 'แหลมฉบัง', 'บ้านบึง']
+const PROVINCE_OPTIONS = ['ชลบุรี']
 
 const BLANK: Omit<Building, 'id' | 'created_at'> = {
   name: '',
   name_en: '',
   district: '',
-  province: 'ชลบุรี',
+  province: '',
+  google_map_url: '',
   facilities: [],
   nearby: [],
 }
@@ -29,8 +33,10 @@ export default function BuildingsPage() {
   const [facilityInput, setFacilityInput] = useState('')
   const [nearbyInput, setNearbyInput] = useState('')
 
+  const [loading, setLoading] = useState(true)
+
   useEffect(() => {
-    getBuildings().then(setBuildings)
+    getBuildings().then(data => { setBuildings(data); setLoading(false) })
   }, [])
 
   const openNew = () => {
@@ -46,8 +52,9 @@ export default function BuildingsPage() {
     setForm({
       name: b.name,
       name_en: b.name_en || '',
-      district: b.district,
-      province: b.province,
+      district: b.district || '',
+      province: b.province || '',
+      google_map_url: b.google_map_url || '',
       facilities: [...b.facilities],
       nearby: [...b.nearby],
     })
@@ -146,6 +153,21 @@ export default function BuildingsPage() {
 
         {/* Building Cards */}
         <div className="space-y-3">
+          {loading ? Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+              <div className="flex items-center gap-4 px-5 py-4">
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="skeleton h-4 w-48 rounded" />
+                  <div className="skeleton h-3 w-64 rounded" />
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="skeleton h-8 w-8 rounded-lg" />
+                  <div className="skeleton h-8 w-8 rounded-lg" />
+                  <div className="skeleton h-4 w-4 rounded" />
+                </div>
+              </div>
+            </div>
+          )) : <>
           {filtered.length === 0 && (
             <div className="text-center py-16 rounded-2xl border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
               <Building2 size={40} className="mx-auto mb-3" style={{ color: 'var(--text-light)' }} />
@@ -160,8 +182,18 @@ export default function BuildingsPage() {
                   onClick={() => setExpandedId(isExpanded ? null : b.id)}>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{b.name}</div>
-                    <div className="text-xs" style={{ color: 'var(--text-light)' }}>
-                      {b.district}{b.province ? `, ${b.province}` : ''} · {b.facilities.length} facilities · {b.nearby.length} nearby
+                    <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-light)' }}>
+                      {(b.district || b.province) && <>
+                        <span>{[b.district, b.province].filter(Boolean).join(', ')}</span>
+                        <span>·</span>
+                      </>}
+                      {b.google_map_url
+                        ? <span className="inline-flex items-center gap-1" style={{ color: 'var(--terracotta)' }}><MapPin size={11} /> มีแผนที่</span>
+                        : <span>ยังไม่มีแผนที่</span>}
+                      <span>·</span>
+                      <span>{b.facilities.length} facilities</span>
+                      <span>·</span>
+                      <span>{b.nearby.length} nearby</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -178,7 +210,17 @@ export default function BuildingsPage() {
                 </div>
 
                 {isExpanded && (
-                  <div className="px-5 pb-4 pt-0 grid md:grid-cols-2 gap-4" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
+                  <div className="px-5 pb-4 pt-0 space-y-3" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
+                    {b.google_map_url && (
+                      <div className="pt-1">
+                        <a href={b.google_map_url} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl transition-colors hover:opacity-90"
+                          style={{ color: 'white', background: 'var(--terracotta)' }}>
+                          <MapPin size={15} /> เปิด Google Maps <ExternalLink size={13} />
+                        </a>
+                      </div>
+                    )}
+                    <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <div className="text-xs font-medium mb-2" style={{ color: 'var(--text-light)' }}>Facilities</div>
                       {b.facilities.length === 0 && <p className="text-xs" style={{ color: 'var(--text-light)' }}>-</p>}
@@ -198,11 +240,13 @@ export default function BuildingsPage() {
                         ))}
                       </div>
                     </div>
+                    </div>
                   </div>
                 )}
               </div>
             )
           })}
+          </>}
         </div>
       </main>
 
@@ -238,20 +282,39 @@ export default function BuildingsPage() {
                   style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
               </div>
 
+              {/* Google Maps */}
+              <div>
+                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'var(--text-mid)' }}>
+                  <span className="inline-flex items-center gap-1.5"><MapPin size={13} /> ที่ตั้ง (Google Maps URL)</span>
+                </label>
+                <input type="url" value={form.google_map_url || ''} onChange={e => setForm(prev => ({ ...prev, google_map_url: e.target.value }))}
+                  placeholder="วาง link Google Maps ที่นี่..."
+                  className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none"
+                  style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
+                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-light)' }}>
+                  เปิด Google Maps → ค้นหาโครงการ → กด &quot;แชร์&quot; → คัดลอก link มาวาง
+                </p>
+              </div>
+
               {/* Location */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-mid)' }}>อำเภอ</label>
-                  <input type="text" value={form.district} onChange={e => setForm(prev => ({ ...prev, district: e.target.value }))}
-                    placeholder="ศรีราชา"
+                  <select value={form.district} onChange={e => setForm(prev => ({ ...prev, district: e.target.value }))}
                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none"
-                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
+                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }}>
+                    <option value="">— เลือกอำเภอ —</option>
+                    {DISTRICT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-mid)' }}>จังหวัด</label>
-                  <input type="text" value={form.province} onChange={e => setForm(prev => ({ ...prev, province: e.target.value }))}
+                  <select value={form.province} onChange={e => setForm(prev => ({ ...prev, province: e.target.value }))}
                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none"
-                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
+                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }}>
+                    <option value="">— เลือกจังหวัด —</option>
+                    {PROVINCE_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
                 </div>
               </div>
 

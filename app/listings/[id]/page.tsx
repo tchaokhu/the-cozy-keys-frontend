@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, BedDouble, Bath, Square, Phone, MessageCircle, Calendar } from 'lucide-react'
+import { ArrowLeft, MapPin, BedDouble, Bath, Square, Phone, MessageCircle, Calendar, ChevronLeft, ChevronRight, X, ZoomIn, Dumbbell, TreePine, ExternalLink } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import { createInquiry, getPropertyById } from '@/lib/supabase'
@@ -22,6 +22,7 @@ export default function PropertyDetailPage() {
     getPropertyById(params.id as string).then(setProperty)
   }, [params.id])
   const [activeImg, setActiveImg] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const [form, setForm] = useState({ name: '', phone: '', email: '', message: '', preferred_date: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -88,40 +89,80 @@ export default function PropertyDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
             {/* LEFT — main content */}
             <div className="lg:col-span-2">
-              {/* Image */}
+              {/* Image Gallery */}
               <div className="mb-8">
+                {/* Main image */}
                 <div
-                  className="w-full rounded-2xl overflow-hidden flex items-center justify-center"
+                  className="relative w-full rounded-2xl overflow-hidden flex items-center justify-center group cursor-pointer"
                   style={{
-                    height: 360,
+                    aspectRatio: '16/10',
                     background: property.property_type === 'condo'
                       ? 'linear-gradient(135deg,#D4C4A8,#C4A882)'
                       : property.property_type === 'house'
                         ? 'linear-gradient(135deg,#C8D4B8,#A8C498)'
                         : 'linear-gradient(135deg,#D4BCA8,#C49878)',
                   }}
+                  onClick={() => property.images[activeImg] && setLightboxOpen(true)}
                 >
                   {property.images[activeImg]
-                    ? <img src={property.images[activeImg]} alt={property.title} className="w-full h-full object-cover" />
+                    ? <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={property.images[activeImg]} alt={property.title} className="w-full h-full object-cover" />
+                        {/* Hover overlay */}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity p-3 rounded-full bg-white/80">
+                            <ZoomIn size={22} style={{ color: 'var(--text-dark)' }} />
+                          </div>
+                        </div>
+                      </>
                     : <span className="text-8xl opacity-25">
                       {property.property_type === 'condo' ? '🏢' : property.property_type === 'house' ? '🏠' : '🏘️'}
                     </span>
                   }
+
+                  {/* Prev / Next arrows */}
+                  {property.images.length > 1 && activeImg > 0 && (
+                    <button type="button"
+                      onClick={e => { e.stopPropagation(); setActiveImg(activeImg - 1) }}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 hover:bg-white transition-colors opacity-0 group-hover:opacity-100"
+                      style={{ color: 'var(--text-dark)' }}>
+                      <ChevronLeft size={22} />
+                    </button>
+                  )}
+                  {property.images.length > 1 && activeImg < property.images.length - 1 && (
+                    <button type="button"
+                      onClick={e => { e.stopPropagation(); setActiveImg(activeImg + 1) }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-white/80 hover:bg-white transition-colors opacity-0 group-hover:opacity-100"
+                      style={{ color: 'var(--text-dark)' }}>
+                      <ChevronRight size={22} />
+                    </button>
+                  )}
+
+                  {/* Image counter */}
+                  {property.images.length > 1 && (
+                    <span className="absolute bottom-3 right-3 px-3 py-1 rounded-full text-xs font-medium bg-black/50 text-white">
+                      {activeImg + 1} / {property.images.length}
+                    </span>
+                  )}
                 </div>
+
+                {/* Thumbnails */}
                 {property.images.length > 1 && (
-                  <div className="flex gap-2 mt-3 overflow-x-auto pb-1">
+                  <div className="flex gap-2.5 mt-3 overflow-x-auto pb-1">
                     {property.images.map((img, i) => (
                       <button
                         key={i}
                         onClick={() => setActiveImg(i)}
                         className="shrink-0 rounded-xl overflow-hidden transition-all"
                         style={{
-                          width: 80, height: 60,
-                          outline: activeImg === i ? '2px solid var(--terracotta)' : '2px solid transparent',
+                          width: 100, height: 72,
+                          outline: activeImg === i ? '2.5px solid var(--terracotta)' : '2.5px solid transparent',
                           outlineOffset: 2,
+                          opacity: activeImg === i ? 1 : 0.65,
                           background: 'var(--cream-dark)',
                         }}
                       >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={img} alt={`${property.title} ${i + 1}`} className="w-full h-full object-cover" />
                       </button>
                     ))}
@@ -144,6 +185,13 @@ export default function PropertyDetailPage() {
                   <div className="flex items-center gap-1 text-sm" style={{ color: 'var(--text-light)' }}>
                     <MapPin size={13} /> {property.location}, {property.province}
                   </div>
+                  {property.buildingInfo?.google_map_url && (
+                    <a href={property.buildingInfo.google_map_url} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 mt-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors hover:opacity-90"
+                      style={{ color: 'white', background: 'var(--terracotta)' }}>
+                      <MapPin size={15} /> ดูแผนที่ Google Maps <ExternalLink size={13} />
+                    </a>
+                  )}
                 </div>
                 <div className="text-right">
                   <div className="font-serif text-3xl font-bold" style={{ color: 'var(--terracotta)' }}>
@@ -178,6 +226,44 @@ export default function PropertyDetailPage() {
                   <p className="font-light leading-relaxed" style={{ color: 'var(--text-mid)' }}>
                     {property.description}
                   </p>
+                </div>
+              )}
+
+              {/* Facilities */}
+              {property.buildingInfo?.facilities && property.buildingInfo.facilities.length > 0 && (
+                <div className="mb-8">
+                  <h2 className="font-serif text-xl font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--brown)' }}>
+                    <Dumbbell size={20} style={{ color: 'var(--terracotta)' }} />
+                    สิ่งอำนวยความสะดวก
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {property.buildingInfo.facilities.map((item, i) => (
+                      <span key={i}
+                        className="px-4 py-2 rounded-full text-sm font-light"
+                        style={{ background: 'var(--cream-dark)', color: 'var(--text-mid)' }}>
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Nearby */}
+              {property.buildingInfo?.nearby && property.buildingInfo.nearby.length > 0 && (
+                <div className="mb-8">
+                  <h2 className="font-serif text-xl font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--brown)' }}>
+                    <TreePine size={20} style={{ color: 'var(--terracotta)' }} />
+                    สถานที่ใกล้เคียง
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    {property.buildingInfo.nearby.map((item, i) => (
+                      <span key={i}
+                        className="px-4 py-2 rounded-full text-sm font-light"
+                        style={{ background: 'var(--cream-dark)', color: 'var(--text-mid)' }}>
+                        {item}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -301,6 +387,50 @@ export default function PropertyDetailPage() {
           </div>
         </div>
       </div>
+      {/* Lightbox */}
+      {lightboxOpen && property.images[activeImg] && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85"
+          onClick={() => setLightboxOpen(false)}>
+          {/* Close */}
+          <button type="button" onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            style={{ color: 'white' }}>
+            <X size={24} />
+          </button>
+
+          {/* Counter */}
+          <span className="absolute top-4 left-4 text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>
+            {activeImg + 1} / {property.images.length}
+          </span>
+
+          {/* Prev */}
+          {activeImg > 0 && (
+            <button type="button"
+              onClick={e => { e.stopPropagation(); setActiveImg(activeImg - 1) }}
+              className="absolute left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              style={{ color: 'white' }}>
+              <ChevronLeft size={28} />
+            </button>
+          )}
+
+          {/* Next */}
+          {activeImg < property.images.length - 1 && (
+            <button type="button"
+              onClick={e => { e.stopPropagation(); setActiveImg(activeImg + 1) }}
+              className="absolute right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              style={{ color: 'white' }}>
+              <ChevronRight size={28} />
+            </button>
+          )}
+
+          {/* Image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={property.images[activeImg]} alt={property.title}
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
       <Footer />
     </>
   )

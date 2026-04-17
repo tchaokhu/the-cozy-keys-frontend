@@ -9,10 +9,14 @@ import AdminSidebar from '@/components/admin/AdminSidebar'
 export default function AdminDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getProperties().then(setProperties)
-    getInquiries().then(setInquiries)
+    Promise.all([getProperties(), getInquiries()]).then(([p, i]) => {
+      setProperties(p)
+      setInquiries(i)
+      setLoading(false)
+    })
   }, [])
 
   const available = properties.filter(p => p.status === 'available').length
@@ -44,7 +48,16 @@ export default function AdminDashboard() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-          {[
+          {loading ? Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl p-5 border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="skeleton w-10 h-10 rounded-xl" />
+                <div className="skeleton w-4 h-4 rounded" />
+              </div>
+              <div className="skeleton h-8 w-20 mb-1 rounded" />
+              <div className="skeleton h-3 w-16 rounded" />
+            </div>
+          )) : [
             { label: 'ทรัพย์ว่าง', val: available, icon: '🏠', color: '#0F6E56', bg: 'rgba(135,168,120,0.1)' },
             { label: 'จองแล้ว', val: reserved, icon: '📋', color: '#854F0B', bg: 'rgba(239,159,39,0.1)' },
             { label: 'ติดต่อใหม่', val: newInquiries, icon: '🔔', color: 'var(--terracotta)', bg: 'rgba(196,98,45,0.1)' },
@@ -70,7 +83,21 @@ export default function AdminDashboard() {
             </Link>
           </div>
           <div className="divide-y" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
-            {inquiries.length === 0 ? (
+            {loading ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center justify-between px-6 py-4">
+                <div className="flex items-center gap-4">
+                  <div className="skeleton w-9 h-9 rounded-full" />
+                  <div className="space-y-2">
+                    <div className="skeleton h-4 w-28 rounded" />
+                    <div className="skeleton h-3 w-20 rounded" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="skeleton h-3 w-16 rounded" />
+                  <div className="skeleton h-6 w-14 rounded-full" />
+                </div>
+              </div>
+            )) : inquiries.length === 0 ? (
               <div className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-light)' }}>
                 ยังไม่มีการติดต่อ
               </div>

@@ -1,6 +1,6 @@
 'use client'
 import { useRef, useState } from 'react'
-import { Upload, Plus, X, GripVertical, ChevronUp, ChevronDown, Image as ImageIcon } from 'lucide-react'
+import { Upload, Plus, X, GripVertical, ChevronUp, ChevronDown, Image as ImageIcon, ZoomIn, ChevronLeft, ChevronRight } from 'lucide-react'
 import { uploadPropertyImage, deletePropertyImage } from '@/lib/supabase'
 
 interface Props {
@@ -15,6 +15,7 @@ export default function ImageManager({ images, onChange }: Props) {
   const [uploadError, setUploadError] = useState('')
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<number | null>(null)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
 
 
   // ── File upload ──────────────────────────────────────────────────────────
@@ -111,10 +112,10 @@ export default function ImageManager({ images, onChange }: Props) {
           onDragOver={e => e.preventDefault()}
           onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files) }}>
           <ImageIcon size={28} style={{ opacity: 0.35 }} />
-          <p className="text-xs">ลากรูปมาวาง หรือกด "อัปโหลดรูป"</p>
+          <p className="text-xs">ลากรูปมาวาง หรือกด &quot;อัปโหลดรูป&quot;</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {images.map((url, i) => (
             <div key={url + i}
               draggable
@@ -122,54 +123,66 @@ export default function ImageManager({ images, onChange }: Props) {
               onDragEnd={onDragEnd}
               onDragOver={e => onDragOver(e, i)}
               onDrop={() => onDrop(i)}
-              className="flex items-center gap-3 px-3 py-2 rounded-xl border transition-all"
+              className="relative group rounded-xl overflow-hidden border transition-all"
               style={{
                 borderColor: dragOver === i ? 'var(--terracotta)' : 'rgba(196,98,45,0.12)',
-                background: dragOver === i ? 'rgba(196,98,45,0.04)' : 'white',
                 opacity: dragIndex === i ? 0.4 : 1,
                 cursor: 'grab',
+                aspectRatio: '4/3',
               }}>
 
-              {/* Drag handle */}
-              <GripVertical size={14} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
-
-              {/* Thumbnail */}
-              <div className="w-12 h-10 rounded-lg overflow-hidden shrink-0 border"
-                style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-full h-full object-cover"
-                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
-              </div>
-
-              {/* URL */}
-              <span className="flex-1 text-xs truncate" style={{ color: 'var(--text-mid)' }}>{url}</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={url} alt="" className="w-full h-full object-cover"
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
 
               {/* Order badge */}
-              <span className="text-xs font-medium w-5 text-center shrink-0" style={{ color: 'var(--text-light)' }}>
+              <span className="absolute top-2 left-2 w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold"
+                style={{ background: i === 0 ? 'var(--terracotta)' : 'rgba(0,0,0,0.5)', color: 'white' }}>
                 {i + 1}
               </span>
+              {i === 0 && (
+                <span className="absolute top-2 left-10 px-2 py-0.5 rounded-full text-[10px] font-medium"
+                  style={{ background: 'var(--terracotta)', color: 'white' }}>
+                  ปก
+                </span>
+              )}
 
-              {/* Up / Down */}
-              <div className="flex flex-col gap-0.5 shrink-0">
-                <button type="button" onClick={() => i > 0 && move(i, i - 1)} disabled={i === 0}
-                  className="p-0.5 rounded disabled:opacity-20 transition-opacity"
-                  style={{ color: 'var(--text-light)' }}>
-                  <ChevronUp size={13} />
+              {/* Hover overlay */}
+              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                <button type="button" onClick={() => setPreviewIndex(i)}
+                  className="p-2 rounded-full bg-white/90 hover:bg-white transition-colors"
+                  style={{ color: 'var(--text-dark)' }}>
+                  <ZoomIn size={16} />
                 </button>
-                <button type="button" onClick={() => i < images.length - 1 && move(i, i + 1)} disabled={i === images.length - 1}
-                  className="p-0.5 rounded disabled:opacity-20 transition-opacity"
-                  style={{ color: 'var(--text-light)' }}>
-                  <ChevronDown size={13} />
+                <button type="button" onClick={() => remove(i)}
+                  className="p-2 rounded-full bg-white/90 hover:bg-white transition-colors"
+                  style={{ color: '#A32D2D' }}>
+                  <X size={16} />
                 </button>
               </div>
 
-              {/* Remove */}
-              <button type="button" onClick={() => remove(i)} className="shrink-0 p-1 rounded-lg transition-colors"
-                style={{ color: 'var(--text-light)' }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#A32D2D')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                <X size={14} />
-              </button>
+              {/* Drag handle */}
+              <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <GripVertical size={16} style={{ color: 'white', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.5))' }} />
+              </div>
+
+              {/* Move buttons */}
+              <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {i > 0 && (
+                  <button type="button" onClick={() => move(i, i - 1)}
+                    className="p-1 rounded-full bg-white/90 hover:bg-white transition-colors"
+                    style={{ color: 'var(--text-dark)' }}>
+                    <ChevronLeft size={14} />
+                  </button>
+                )}
+                {i < images.length - 1 && (
+                  <button type="button" onClick={() => move(i, i + 1)}
+                    className="p-1 rounded-full bg-white/90 hover:bg-white transition-colors"
+                    style={{ color: 'var(--text-dark)' }}>
+                    <ChevronRight size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -177,8 +190,52 @@ export default function ImageManager({ images, onChange }: Props) {
 
       {images.length > 0 && (
         <p className="text-xs" style={{ color: 'var(--text-light)' }}>
-          ลากเพื่อเรียงลำดับ · รูปแรกจะใช้เป็นรูปปก
+          ลากเพื่อเรียงลำดับ · คลิกรูปเพื่อดูเต็มจอ · รูปแรกจะใช้เป็นรูปปก
         </p>
+      )}
+
+      {/* Lightbox modal */}
+      {previewIndex !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setPreviewIndex(null)}>
+          {/* Close */}
+          <button type="button" onClick={() => setPreviewIndex(null)}
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+            style={{ color: 'white' }}>
+            <X size={24} />
+          </button>
+
+          {/* Counter */}
+          <span className="absolute top-4 left-4 text-sm font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>
+            {previewIndex + 1} / {images.length}
+          </span>
+
+          {/* Prev */}
+          {previewIndex > 0 && (
+            <button type="button"
+              onClick={e => { e.stopPropagation(); setPreviewIndex(previewIndex - 1) }}
+              className="absolute left-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              style={{ color: 'white' }}>
+              <ChevronLeft size={28} />
+            </button>
+          )}
+
+          {/* Next */}
+          {previewIndex < images.length - 1 && (
+            <button type="button"
+              onClick={e => { e.stopPropagation(); setPreviewIndex(previewIndex + 1) }}
+              className="absolute right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+              style={{ color: 'white' }}>
+              <ChevronRight size={28} />
+            </button>
+          )}
+
+          {/* Image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={images[previewIndex]} alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={e => e.stopPropagation()} />
+        </div>
       )}
     </div>
   )

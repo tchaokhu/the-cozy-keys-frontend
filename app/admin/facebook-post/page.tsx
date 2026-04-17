@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Search, Copy, Check, RefreshCw, Sparkles, Share2, X, Send, Clock, Loader2, ExternalLink, ImageIcon, MessageSquare, Home, Upload, FileText } from 'lucide-react'
 import { getProperties, createScheduledPost, uploadPropertyImage } from '@/lib/supabase'
-import { fetchPropertyInfo, checkFacebookConfig, publishToFacebook } from './actions'
+import { fetchPropertyInfo, checkFacebookConfig, publishToFacebook, translateFacilitiesAndNearby } from './actions'
 import type { Property } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 
@@ -308,7 +308,7 @@ function generateTH(p: Property, extras: PostExtras): string {
   const typeTH = TYPE_LABEL_TH[p.property_type] || p.property_type
   const typeEmoji = TYPE_EMOJI[p.property_type] || '🏠'
 
-  lines.push('🔑 The Cozy Keys')
+  lines.push('🔑 The Cozy Keys (English versionis Below)')
   lines.push(`✨ ให้เช่า | ${p.title}`)
   lines.push(SEP)
 
@@ -359,7 +359,7 @@ function generateTH(p: Property, extras: PostExtras): string {
   return lines.join('\n')
 }
 
-function generateEN(p: Property, extras: PostExtras): string {
+function generateEN(p: Property, extras: PostExtras, translated?: { facilitiesEN: string[]; nearbyEN: string[] }): string {
   const lines: string[] = []
   const typeEN = TYPE_LABEL_EN[p.property_type] || p.property_type
   const typeEmoji = TYPE_EMOJI[p.property_type] || '🏠'
@@ -377,14 +377,14 @@ function generateEN(p: Property, extras: PostExtras): string {
   lines.push(`📍 ${p.district}, ${p.province}${nearbyPart}`)
   lines.push(SEP)
 
-  const facilities = extras.facilityLines.trim().split('\n').filter(Boolean)
+  const facilities = translated?.facilitiesEN ?? extras.facilityLines.trim().split('\n').filter(Boolean)
   if (facilities.length > 0) {
     lines.push('🏊 World-Class Facilities')
     facilities.forEach(f => lines.push(`› ${f}`))
     lines.push(SEP)
   }
 
-  const nearby = extras.nearbyLines.trim().split('\n').filter(Boolean)
+  const nearby = translated?.nearbyEN ?? extras.nearbyLines.trim().split('\n').filter(Boolean)
   if (nearby.length > 0) {
     lines.push('📍 Nearby Locations')
     nearby.forEach(n => lines.push(`› ${n}`))
@@ -432,6 +432,7 @@ export default function FacebookPostPage() {
   const [postMode, setPostMode] = useState<'property' | 'general'>('property')
 
   const [properties, setProperties] = useState<Property[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Property | null>(null)
   const [extras, setExtras] = useState<PostExtras>(BLANK_EXTRAS)
@@ -461,7 +462,7 @@ export default function FacebookPostPage() {
   const [scheduleTime, setScheduleTime] = useState('')
 
   useEffect(() => {
-    getProperties().then(setProperties)
+    getProperties().then(data => { setProperties(data); setLoading(false) })
     checkFacebookConfig().then(r => setFbConfigured(r.configured))
   }, [])
 
@@ -501,10 +502,24 @@ export default function FacebookPostPage() {
   const set = <K extends keyof PostExtras>(k: K, v: PostExtras[K]) =>
     setExtras(prev => ({ ...prev, [k]: v }))
 
-  const handleGenerate = () => {
+  const [generating, setGenerating] = useState(false)
+
+  const handleGenerate = async () => {
     if (!selected) return
+    setGenerating(true)
     setPostTH(generateTH(selected, extras))
-    setPostEN(generateEN(selected, extras))
+
+    const facilityLines = extras.facilityLines.trim().split('\n').filter(Boolean)
+    const nearbyLines = extras.nearbyLines.trim().split('\n').filter(Boolean)
+
+    try {
+      const translated = await translateFacilitiesAndNearby(facilityLines, nearbyLines)
+      setPostEN(generateEN(selected, extras, translated))
+    } catch {
+      setPostEN(generateEN(selected, extras))
+    } finally {
+      setGenerating(false)
+    }
   }
 
   // ─── General post handlers ──────────────────────────────────────────────
@@ -547,17 +562,17 @@ export default function FacebookPostPage() {
 
   // ─── Shared publish handler ────────────────────────────────────────────
   const handlePublishGeneral = async () => {
-    const text = generalActiveTab === 'th' ? generalPostTH : generalPostEN
-    if (!text) return
+    if (!generalPostTH && !generalPostEN) return
     const scheduleInfo = publishMode === 'schedule' ? { date: scheduleDate, time: scheduleTime } : undefined
     if (scheduleInfo && (!scheduleInfo.date || !scheduleInfo.time)) {
       setFbResult({ success: false, error: 'กรุณาเลือกวันที่และเวลา' })
       return
     }
-    const lang = generalActiveTab === 'th' ? 'ภาษาไทย' : 'English'
+    const parts = [generalPostTH, generalPostEN].filter(Boolean)
+    const text = parts.join(`\n\n${SEP}\n\n`)
     const action = publishMode === 'schedule'
-      ? `ตั้งเวลาโพสต์เวอร์ชัน ${lang} พร้อม ${generalImages.length} รูป ไปยัง Facebook Page?`
-      : `โพสต์เวอร์ชัน ${lang} พร้อม ${generalImages.length} รูป ไปยัง Facebook Page?`
+      ? `ตั้งเวลาโพสต์ TH/EN พร้อม ${generalImages.length} รูป ไปยัง Facebook Page?`
+      : `โพสต์ TH/EN พร้อม ${generalImages.length} รูป ไปยัง Facebook Page?`
     if (!window.confirm(action)) return
 
     setFbPublishing(true)
@@ -573,17 +588,17 @@ export default function FacebookPostPage() {
   }
 
   const handlePublish = async () => {
-    const text = activeTab === 'th' ? postTH : postEN
-    if (!text) return
+    if (!postTH && !postEN) return
     const scheduleInfo = publishMode === 'schedule' ? { date: scheduleDate, time: scheduleTime } : undefined
     if (scheduleInfo && (!scheduleInfo.date || !scheduleInfo.time)) {
       setFbResult({ success: false, error: 'กรุณาเลือกวันที่และเวลา' })
       return
     }
-    const lang = activeTab === 'th' ? 'ภาษาไทย' : 'English'
+    const parts = [postTH, postEN].filter(Boolean)
+    const text = parts.join(`\n\n${SEP}\n\n`)
     const action = publishMode === 'schedule'
-      ? `ตั้งเวลาโพสต์เวอร์ชัน ${lang} พร้อม ${selectedImages.length} รูป ไปยัง Facebook Page?`
-      : `โพสต์เวอร์ชัน ${lang} พร้อม ${selectedImages.length} รูป ไปยัง Facebook Page?`
+      ? `ตั้งเวลาโพสต์ TH/EN พร้อม ${selectedImages.length} รูป ไปยัง Facebook Page?`
+      : `โพสต์ TH/EN พร้อม ${selectedImages.length} รูป ไปยัง Facebook Page?`
     if (!window.confirm(action)) return
 
     setFbPublishing(true)
@@ -664,7 +679,15 @@ export default function FacebookPostPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {filtered.length === 0 ? (
+        {loading ? Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="px-3 py-3 mb-1 space-y-2">
+            <div className="skeleton h-4 w-3/4 rounded" />
+            <div className="flex items-center justify-between">
+              <div className="skeleton h-3 w-28 rounded" />
+              <div className="skeleton h-5 w-12 rounded-full" />
+            </div>
+          </div>
+        )) : filtered.length === 0 ? (
           <div className="text-center py-12 text-sm" style={{ color: 'var(--text-light)' }}>
             ไม่พบทรัพย์
           </div>
@@ -918,7 +941,7 @@ export default function FacebookPostPage() {
                         )}
 
                         <button type="button" onClick={handlePublishGeneral}
-                          disabled={fbPublishing || !(generalActiveTab === 'th' ? generalPostTH : generalPostEN)}
+                          disabled={fbPublishing || (!generalPostTH && !generalPostEN)}
                           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50"
                           style={{ background: 'var(--terracotta)' }}>
                           {fbPublishing
@@ -1326,10 +1349,11 @@ export default function FacebookPostPage() {
               <button
                 type="button"
                 onClick={handleGenerate}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium mb-6 transition-all"
+                disabled={generating}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium mb-6 transition-all disabled:opacity-70"
                 style={{ background: 'var(--terracotta)', color: 'white' }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.background = 'var(--terracotta-dark)'
+                  if (!generating) e.currentTarget.style.background = 'var(--terracotta-dark)'
                   e.currentTarget.style.boxShadow = '0 4px 16px rgba(196,98,45,0.35)'
                 }}
                 onMouseLeave={e => {
@@ -1337,7 +1361,10 @@ export default function FacebookPostPage() {
                   e.currentTarget.style.boxShadow = 'none'
                 }}
               >
-                <RefreshCw size={16} /> สร้างโพสต์
+                {generating
+                  ? <><Loader2 size={16} className="animate-spin" /> กำลังสร้างโพสต์...</>
+                  : <><RefreshCw size={16} /> สร้างโพสต์</>
+                }
               </button>
 
               {/* Output */}
@@ -1431,7 +1458,7 @@ export default function FacebookPostPage() {
                         )}
 
                         {/* Publish button */}
-                        <button type="button" onClick={handlePublish} disabled={fbPublishing || !activePost}
+                        <button type="button" onClick={handlePublish} disabled={fbPublishing || (!postTH && !postEN)}
                           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50"
                           style={{ background: 'var(--terracotta)' }}>
                           {fbPublishing

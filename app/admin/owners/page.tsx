@@ -105,8 +105,37 @@ export default function AdminOwnersPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <div className="text-sm" style={{ color: 'var(--text-light)' }}>กำลังโหลด...</div>
+          <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+            <table className="w-full">
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(196,98,45,0.08)', background: 'var(--cream)' }}>
+                  {['ชื่อ', 'ติดต่อ', 'เจอจากไหน', 'หมายเหตุ', ''].map(h => (
+                    <th key={h} className="text-left px-5 py-3.5 text-xs font-medium" style={{ color: 'var(--text-light)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i} className="border-b" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-28 rounded" /></td>
+                    <td className="px-5 py-4">
+                      <div className="space-y-1.5">
+                        <div className="skeleton h-3 w-24 rounded" />
+                        <div className="skeleton h-3 w-32 rounded" />
+                      </div>
+                    </td>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-20 rounded" /></td>
+                    <td className="px-5 py-4"><div className="skeleton h-4 w-24 rounded" /></td>
+                    <td className="px-5 py-4">
+                      <div className="flex gap-2">
+                        <div className="skeleton h-7 w-7 rounded-lg" />
+                        <div className="skeleton h-7 w-7 rounded-lg" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : owners.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3">

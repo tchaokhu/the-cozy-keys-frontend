@@ -15,10 +15,14 @@ export default function AdminInquiries() {
   const [properties, setProperties] = useState<Property[]>([])
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const [statusFilter, setStatusFilter] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    getProperties().then(setProperties)
-    getInquiries().then(setInquiries)
+    Promise.all([getProperties(), getInquiries()]).then(([p, i]) => {
+      setProperties(p)
+      setInquiries(i)
+      setLoading(false)
+    })
   }, [])
 
   const filtered = statusFilter
@@ -68,7 +72,29 @@ export default function AdminInquiries() {
 
         {/* Cards */}
         <div className="flex flex-col gap-4">
-          {filtered.length === 0 ? (
+          {loading ? Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl border p-5" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="skeleton w-11 h-11 rounded-full shrink-0" />
+                  <div className="space-y-2">
+                    <div className="skeleton h-4 w-32 rounded" />
+                    <div className="skeleton h-3 w-24 rounded" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="skeleton h-6 w-14 rounded-full" />
+                  <div className="skeleton h-3 w-20 rounded" />
+                </div>
+              </div>
+              <div className="skeleton h-10 w-full rounded-xl mt-3" />
+              <div className="skeleton h-4 w-3/4 rounded mt-3" />
+              <div className="flex gap-2 mt-4">
+                <div className="skeleton h-9 w-28 rounded-xl" />
+                <div className="skeleton h-9 w-16 rounded-xl" />
+              </div>
+            </div>
+          )) : filtered.length === 0 ? (
             <div className="rounded-2xl border p-8 text-center" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
               <p className="text-sm" style={{ color: 'var(--text-light)' }}>ยังไม่มีการติดต่อ</p>
             </div>

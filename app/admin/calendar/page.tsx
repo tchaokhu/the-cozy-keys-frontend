@@ -360,8 +360,39 @@ export default function CalendarPage() {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-20 text-sm" style={{ color: 'var(--text-light)' }}>
-            กำลังโหลด...
+          <div className="flex flex-col lg:flex-row gap-6">
+            {/* Skeleton calendar */}
+            <div className="flex-1">
+              <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                <div className="grid grid-cols-7">
+                  {DAYS_TH.map((d, i) => (
+                    <div key={i} className="py-3 text-center text-xs font-medium"
+                      style={{ color: i === 0 ? '#dc2626' : 'var(--text-light)', background: 'var(--cream)' }}>
+                      {d}
+                    </div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7">
+                  {Array.from({ length: 35 }).map((_, i) => (
+                    <div key={i} className="min-h-[90px] md:min-h-[110px] border-t border-r p-1.5"
+                      style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
+                      <div className="skeleton h-4 w-4 rounded-full mb-2" />
+                      {i % 5 === 0 && <div className="skeleton h-5 w-full rounded-lg mb-1" />}
+                      {i % 7 === 2 && <div className="skeleton h-5 w-full rounded-lg mb-1" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* Skeleton detail panel */}
+            <div className="w-full lg:w-80 shrink-0">
+              <div className="rounded-2xl border p-5" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                <div className="skeleton h-5 w-36 rounded mb-4" />
+                <div className="skeleton h-20 w-full rounded-xl mb-4" />
+                <div className="skeleton h-4 w-48 rounded mb-2" />
+                <div className="skeleton h-3 w-32 rounded" />
+              </div>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col lg:flex-row gap-6">

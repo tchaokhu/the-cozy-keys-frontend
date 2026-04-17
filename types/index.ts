@@ -7,6 +7,7 @@ export interface Building {
   name_en?: string
   district: string
   province: string
+  google_map_url?: string
   facilities: string[]
   nearby: string[]
   created_at: string

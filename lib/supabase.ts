@@ -95,7 +95,13 @@ export async function getProperties(filters?: Partial<{
 export async function getPropertyById(id: string): Promise<Property | null> {
   const sb = getSupabase()
   const { data, error } = await sb.from('properties').select('*').eq('id', id).maybeSingle()
-  if (error) return null
+  if (error || !data) return null
+
+  if (data.building_id) {
+    const { data: bld } = await sb.from('buildings').select('*').eq('id', data.building_id).maybeSingle()
+    if (bld) data.buildingInfo = bld
+  }
+
   return data
 }
 
