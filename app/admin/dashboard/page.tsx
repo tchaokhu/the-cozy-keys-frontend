@@ -1,8 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, TrendingUp } from 'lucide-react'
-import { getProperties, getInquiries } from '@/lib/supabase'
+import { Plus, TrendingUp, AlertTriangle, Clock } from 'lucide-react'
+import { getProperties, getInquiries, getRentalStatus } from '@/lib/supabase'
 import type { Property, Inquiry } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 
@@ -25,6 +25,17 @@ export default function AdminDashboard() {
   const totalRevenue = properties
     .filter(p => p.status === 'rented' && p.rented_by_us)
     .reduce((sum, p) => sum + p.price_monthly, 0)
+
+  const rentedWithExpiry = properties
+    .filter(p => p.status === 'rented' && p.rented_until)
+    .map(p => ({ p, ...getRentalStatus(p.rented_until) }))
+  const expiring = rentedWithExpiry
+    .filter(x => x.state === 'expiring')
+    .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))
+  const expired = rentedWithExpiry
+    .filter(x => x.state === 'expired')
+    .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))
+  const expiryAlerts = [...expired, ...expiring].slice(0, 5)
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
@@ -73,6 +84,60 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Rental expiry alerts */}
+        {!loading && (expired.length > 0 || expiring.length > 0) && (
+          <div className="rounded-2xl border overflow-hidden mb-6" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+            <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: 'rgba(196,98,45,0.08)' }}>
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={18} style={{ color: expired.length > 0 ? '#A32D2D' : '#854F0B' }} />
+                <h2 className="font-serif text-lg font-semibold" style={{ color: 'var(--brown)' }}>สัญญาเช่าใกล้หมด</h2>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(196,98,45,0.08)', color: 'var(--terracotta)' }}>
+                  {expired.length + expiring.length}
+                </span>
+              </div>
+              <Link href="/admin/properties" className="text-xs font-medium" style={{ color: 'var(--terracotta)' }}>
+                ดูทั้งหมด →
+              </Link>
+            </div>
+            <div className="divide-y" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
+              {expiryAlerts.map(({ p, daysLeft, state }) => {
+                const isExpired = state === 'expired'
+                const endDate = p.rented_until ? new Date(p.rented_until).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+                return (
+                  <Link key={p.id} href={`/admin/properties/${p.id}/edit`}
+                    className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-[rgba(196,98,45,0.03)]">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                        style={{
+                          background: isExpired ? 'rgba(226,75,74,0.1)' : 'rgba(239,159,39,0.12)',
+                          color: isExpired ? '#A32D2D' : '#854F0B',
+                        }}>
+                        <Clock size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-dark)' }}>
+                          {p.title_en || p.title}
+                        </div>
+                        <div className="text-xs truncate" style={{ color: 'var(--text-light)' }}>
+                          {p.district}{p.owner?.name ? ` · ${p.owner.name}` : ''} · ถึง {endDate}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ml-3"
+                      style={{
+                        background: isExpired ? 'rgba(226,75,74,0.15)' : 'rgba(239,159,39,0.18)',
+                        color: isExpired ? '#A32D2D' : '#854F0B',
+                      }}>
+                      {isExpired ? `หมดแล้ว ${Math.abs(daysLeft!)} วัน` : `เหลือ ${daysLeft} วัน`}
+                    </span>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Recent inquiries */}
         <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>

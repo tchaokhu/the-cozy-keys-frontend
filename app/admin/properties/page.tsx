@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, Search, Edit2, Eye, Trash2 } from 'lucide-react'
-import { getProperties, deleteProperty } from '@/lib/supabase'
+import { getProperties, deleteProperty, getRentalStatus } from '@/lib/supabase'
 import type { Property } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import AdminTable, { Column } from '@/components/admin/AdminTable'
@@ -14,6 +14,21 @@ const STATUS_STYLE = {
 }
 const TYPE_LABEL = { condo: 'คอนโด', house: 'บ้านเดี่ยว', townhome: 'ทาวน์โฮม' }
 const STATUS_ORDER = { available: 0, reserved: 1, rented: 2 }
+
+function RentalBadge({ rented_until, status }: { rented_until?: string; status: string }) {
+  if (status !== 'rented') return null
+  const { daysLeft, state } = getRentalStatus(rented_until)
+  if (!state || state === 'active') return null
+  const style = state === 'expired'
+    ? { bg: 'rgba(226,75,74,0.15)', color: '#A32D2D', label: `หมดสัญญา ${Math.abs(daysLeft!)} วัน` }
+    : { bg: 'rgba(239,159,39,0.18)', color: '#854F0B', label: `เหลือ ${daysLeft} วัน` }
+  return (
+    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap"
+      style={{ background: style.bg, color: style.color }}>
+      {style.label}
+    </span>
+  )
+}
 
 type SortKey = 'title' | 'property_type' | 'district' | 'owner' | 'price_monthly' | 'status'
 type SortDir = 'asc' | 'desc'
@@ -174,8 +189,11 @@ export default function AdminProperties() {
       render: p => {
         const s = STATUS_STYLE[p.status]
         return (
-          <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
-            style={{ background: s.bg, color: s.color }}>{s.label}</span>
+          <div className="flex flex-col items-center gap-1">
+            <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
+              style={{ background: s.bg, color: s.color }}>{s.label}</span>
+            <RentalBadge rented_until={p.rented_until} status={p.status} />
+          </div>
         )
       },
     },
@@ -255,8 +273,11 @@ export default function AdminProperties() {
                       {TYPE_LABEL[p.property_type]} · {p.district}{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-full text-xs font-medium ml-2 shrink-0"
-                    style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                  <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium"
+                      style={{ background: s.bg, color: s.color }}>{s.label}</span>
+                    <RentalBadge rented_until={p.rented_until} status={p.status} />
+                  </div>
                 </div>
                 <div className="flex items-center justify-between mt-3">
                   <div>

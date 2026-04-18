@@ -44,6 +44,33 @@ export function onAuthStateChange(callback: (session: unknown) => void) {
   })
 }
 
+// ─── Rental expiry helpers ──────────────────────────────────────────────────
+export const EXPIRING_SOON_DAYS = 30
+
+export type RentalState = 'expired' | 'expiring' | 'active' | null
+
+export function getRentalStatus(rented_until?: string | null): { daysLeft: number | null; state: RentalState } {
+  if (!rented_until) return { daysLeft: null, state: null }
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const end = new Date(rented_until); end.setHours(0, 0, 0, 0)
+  const daysLeft = Math.round((end.getTime() - today.getTime()) / 86400000)
+  if (daysLeft < 0) return { daysLeft, state: 'expired' }
+  if (daysLeft <= EXPIRING_SOON_DAYS) return { daysLeft, state: 'expiring' }
+  return { daysLeft, state: 'active' }
+}
+
+// Auto-expire: flip status back to 'available' for rentals whose rented_until has passed.
+async function expireOverdueRentals(): Promise<void> {
+  const sb = getSupabase()
+  const today = new Date().toISOString().slice(0, 10)
+  const { error } = await sb
+    .from('properties')
+    .update({ status: 'available', updated_at: new Date().toISOString() })
+    .eq('status', 'rented')
+    .lt('rented_until', today)
+  if (error) console.warn('Auto-expire rentals failed:', error.message)
+}
+
 // ─── Properties ──────────────────────────────────────────────────────────────
 export async function getProperties(filters?: Partial<{
   district: string
@@ -54,6 +81,7 @@ export async function getProperties(filters?: Partial<{
   status: string
 }>): Promise<Property[]> {
   const sb = getSupabase()
+  await expireOverdueRentals()
   let query = sb.from('properties').select('*').order('created_at', { ascending: false })
   if (filters?.district) query = query.eq('district', filters.district)
   if (filters?.property_type) query = query.eq('property_type', filters.property_type)
