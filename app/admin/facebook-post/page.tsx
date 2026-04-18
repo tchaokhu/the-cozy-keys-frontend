@@ -638,10 +638,16 @@ export default function FacebookPostPage() {
   }
 
   const filtered = search
-    ? properties.filter(p =>
-        p.title.toLowerCase().includes(search.toLowerCase()) ||
-        p.district.includes(search)
-      )
+    ? properties.filter(p => {
+        const q = search.toLowerCase()
+        return (
+          p.title.toLowerCase().includes(q) ||
+          (p.title_en || '').toLowerCase().includes(q) ||
+          (p.owner?.name || '').toLowerCase().includes(q) ||
+          (p.room_number || '').toLowerCase().includes(q) ||
+          p.district.toLowerCase().includes(q)
+        )
+      })
     : properties
 
   const activePost = activeTab === 'th' ? postTH : postEN
@@ -669,7 +675,7 @@ export default function FacebookPostPage() {
           <Search size={13} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
           <input
             type="text"
-            placeholder="ค้นหา..."
+            placeholder="ค้นหา ชื่อไทย/อังกฤษ, เจ้าของ, ห้อง..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="bg-transparent text-sm outline-none flex-1"
@@ -712,15 +718,33 @@ export default function FacebookPostPage() {
                   if (!isSelected) e.currentTarget.style.background = 'transparent'
                 }}
               >
-                <div className="font-medium text-sm mb-1 leading-tight"
-                  style={{ color: isSelected ? 'var(--terracotta)' : 'var(--brown)' }}>
+                {p.title_en && (
+                  <div className="font-medium text-sm mb-0.5 leading-tight"
+                    style={{ color: isSelected ? 'var(--terracotta)' : 'var(--brown)' }}>
+                    {p.title_en}
+                  </div>
+                )}
+                <div className={`leading-tight mb-1 ${p.title_en ? 'text-[11px] font-light italic' : 'text-sm font-medium'}`}
+                  style={{ color: p.title_en ? 'var(--text-light)' : (isSelected ? 'var(--terracotta)' : 'var(--brown)') }}>
                   {p.title}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs" style={{ color: 'var(--text-light)' }}>
+                {(p.floor || p.room_number) && (
+                  <div className="text-[11px] mb-0.5" style={{ color: 'var(--text-mid)' }}>
+                    {p.floor ? `ชั้น ${p.floor}` : ''}
+                    {p.floor && p.room_number ? ' · ' : ''}
+                    {p.room_number ? `ห้อง ${p.room_number}` : ''}
+                  </div>
+                )}
+                {p.owner?.name && (
+                  <div className="text-[11px] mb-1 truncate" style={{ color: 'var(--text-mid)' }}>
+                    👤 {p.owner.name}
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs truncate" style={{ color: 'var(--text-light)' }}>
                     {p.district} · ฿{p.price_monthly.toLocaleString()}
                   </span>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
                     style={{ background: statusS.bg, color: statusS.color }}>
                     {statusS.label}
                   </span>

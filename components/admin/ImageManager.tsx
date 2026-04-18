@@ -77,22 +77,24 @@ export default function ImageManager({ images, onChange }: Props) {
   return (
     <div className="space-y-4">
       {/* Upload + URL row */}
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all shrink-0 disabled:opacity-60"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all shrink-0 disabled:opacity-60"
           style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--terracotta)', background: 'rgba(196,98,45,0.05)' }}>
           <Upload size={15} /> {uploading ? 'กำลังอัปโหลด...' : 'อัปโหลดรูป'}
         </button>
-        <input type="text" value={urlInput} onChange={e => setUrlInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addUrl())}
-          placeholder="หรือวาง URL รูปภาพ..."
-          className="flex-1 px-4 py-2.5 rounded-xl text-sm border outline-none"
-          style={{ background: 'white', borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-dark)' }} />
-        <button type="button" onClick={addUrl}
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium shrink-0"
-          style={{ background: 'var(--terracotta)', color: 'white' }}>
-          <Plus size={15} />
-        </button>
+        <div className="flex gap-2 flex-1 min-w-0">
+          <input type="text" value={urlInput} onChange={e => setUrlInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addUrl())}
+            placeholder="หรือวาง URL รูปภาพ..."
+            className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm border outline-none"
+            style={{ background: 'white', borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-dark)' }} />
+          <button type="button" onClick={addUrl}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium shrink-0"
+            style={{ background: 'var(--terracotta)', color: 'white' }}>
+            <Plus size={15} />
+          </button>
+        </div>
       </div>
 
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
