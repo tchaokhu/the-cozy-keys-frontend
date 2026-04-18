@@ -179,7 +179,7 @@ export async function createProperty(
 const PROPERTY_COLUMNS = [
   'title', 'title_en', 'description', 'price_monthly', 'property_type',
   'bedrooms', 'bathrooms', 'area_sqm', 'floor', 'building', 'room_number',
-  'location', 'district', 'province', 'status', 'reserved_until', 'images', 'contact_line', 'owner_id', 'building_id',
+  'location', 'district', 'province', 'status', 'rented_until', 'rented_by_us', 'images', 'contact_line', 'owner_id', 'building_id',
 ] as const
 
 export async function updateProperty(

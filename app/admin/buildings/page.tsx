@@ -1,9 +1,13 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Plus, Search, Edit2, Trash2, X, ChevronDown, ChevronUp, Building2, MapPin, ExternalLink } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, X, Building2, MapPin } from 'lucide-react'
 import { getBuildings, createBuilding, updateBuilding, deleteBuilding } from '@/lib/supabase'
 import type { Building } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import AdminTable, { Column } from '@/components/admin/AdminTable'
+
+type SortKey = 'name' | 'district' | 'facilities' | 'nearby'
+type SortDir = 'asc' | 'desc'
 
 const DISTRICT_OPTIONS = ['ศรีราชา', 'แหลมฉบัง', 'บ้านบึง']
 const PROVINCE_OPTIONS = ['ชลบุรี']
@@ -27,17 +31,33 @@ export default function BuildingsPage() {
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Facility / nearby input
   const [facilityInput, setFacilityInput] = useState('')
   const [nearbyInput, setNearbyInput] = useState('')
 
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const perPage = 10
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc')
+      else { setSortKey(null); setSortDir('asc') }
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+    setCurrentPage(1)
+  }
 
   useEffect(() => {
     getBuildings().then(data => { setBuildings(data); setLoading(false) })
   }, [])
+
+  useEffect(() => { setCurrentPage(1) }, [search])
 
   const openNew = () => {
     setEditing(null)
@@ -118,12 +138,112 @@ export default function BuildingsPage() {
     setForm(prev => ({ ...prev, nearby: prev.nearby.filter((_, i) => i !== idx) }))
   }
 
-  const filtered = search
-    ? buildings.filter(b =>
-        b.name.toLowerCase().includes(search.toLowerCase()) ||
-        b.district.toLowerCase().includes(search.toLowerCase())
-      )
+  let filtered = search
+    ? buildings.filter(b => {
+        const q = search.toLowerCase()
+        return (
+          b.name.toLowerCase().includes(q) ||
+          (b.name_en?.toLowerCase().includes(q) ?? false) ||
+          (b.district?.toLowerCase().includes(q) ?? false)
+        )
+      })
     : buildings
+
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name, 'th'); break
+        case 'district': cmp = (a.district || '').localeCompare(b.district || '', 'th'); break
+        case 'facilities': cmp = a.facilities.length - b.facilities.length; break
+        case 'nearby': cmp = a.nearby.length - b.nearby.length; break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginated = filtered.slice((safePage - 1) * perPage, safePage * perPage)
+
+  const columns: Column<Building>[] = [
+    {
+      key: 'name',
+      label: 'ชื่อโครงการ',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: (
+        <div className="space-y-2">
+          <div className="skeleton h-4 w-40" />
+          <div className="skeleton h-3 w-28" />
+        </div>
+      ),
+      render: b => (
+        <>
+          <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{b.name_en || b.name}</div>
+          {b.name_en && (
+            <div className="text-xs" style={{ color: 'var(--text-mid)' }}>{b.name}</div>
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'district',
+      label: 'ทำเล',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-24 mx-auto" />,
+      render: b => {
+        const loc = [b.district, b.province].filter(Boolean).join(', ')
+        return loc
+          ? <span className="text-sm" style={{ color: 'var(--text-mid)' }}>{loc}</span>
+          : <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>
+      },
+    },
+    {
+      key: 'map',
+      label: 'แผนที่',
+      headerAlign: 'center',
+      cellAlign: 'center',
+      skeleton: <div className="skeleton h-6 w-20 rounded-full mx-auto" />,
+      render: b => b.google_map_url
+        ? (
+          <a href={b.google_map_url} target="_blank" rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-opacity hover:opacity-80"
+            style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
+            <MapPin size={11} /> เปิดแผนที่
+          </a>
+        )
+        : <span className="text-xs" style={{ color: 'var(--text-light)' }}>—</span>,
+    },
+    {
+      key: 'facilities',
+      label: 'Facilities',
+      sortable: true,
+      headerAlign: 'center',
+      cellAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-8 mx-auto" />,
+      render: b => (
+        <span className="text-sm font-medium" style={{ color: b.facilities.length > 0 ? 'var(--text-dark)' : 'var(--text-light)' }}>
+          {b.facilities.length}
+        </span>
+      ),
+    },
+    {
+      key: 'nearby',
+      label: 'Nearby',
+      sortable: true,
+      headerAlign: 'center',
+      cellAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-8 mx-auto" />,
+      render: b => (
+        <span className="text-sm font-medium" style={{ color: b.nearby.length > 0 ? 'var(--text-dark)' : 'var(--text-light)' }}>
+          {b.nearby.length}
+        </span>
+      ),
+    },
+  ]
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
@@ -151,103 +271,53 @@ export default function BuildingsPage() {
             style={{ background: 'white', borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
         </div>
 
-        {/* Building Cards */}
-        <div className="space-y-3">
-          {loading ? Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-              <div className="flex items-center gap-4 px-5 py-4">
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="skeleton h-4 w-48 rounded" />
-                  <div className="skeleton h-3 w-64 rounded" />
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="skeleton h-8 w-8 rounded-lg" />
-                  <div className="skeleton h-8 w-8 rounded-lg" />
-                  <div className="skeleton h-4 w-4 rounded" />
-                </div>
+        {!loading && filtered.length === 0 ? (
+          <div className="text-center py-16 rounded-2xl border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+            <Building2 size={40} className="mx-auto mb-3" style={{ color: 'var(--text-light)' }} />
+            <p style={{ color: 'var(--text-light)' }}>ยังไม่มีข้อมูลตึก/โครงการ</p>
+          </div>
+        ) : (
+          <AdminTable<Building>
+            columns={columns}
+            data={paginated}
+            rowKey={b => b.id}
+            loading={loading}
+            skeletonRows={6}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={k => toggleSort(k as SortKey)}
+            renderActions={b => (
+              <>
+                <button onClick={() => openEdit(b)}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                  <Edit2 size={15} />
+                </button>
+                <button onClick={() => setDeleteId(b.id)}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                  <Trash2 size={15} />
+                </button>
+              </>
+            )}
+            actionsSkeleton={
+              <div className="flex gap-2 justify-center">
+                <div className="skeleton h-7 w-7 rounded-lg" />
+                <div className="skeleton h-7 w-7 rounded-lg" />
               </div>
-            </div>
-          )) : <>
-          {filtered.length === 0 && (
-            <div className="text-center py-16 rounded-2xl border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-              <Building2 size={40} className="mx-auto mb-3" style={{ color: 'var(--text-light)' }} />
-              <p style={{ color: 'var(--text-light)' }}>ยังไม่มีข้อมูลตึก/โครงการ</p>
-            </div>
-          )}
-          {filtered.map(b => {
-            const isExpanded = expandedId === b.id
-            return (
-              <div key={b.id} className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-                <div className="flex items-center gap-4 px-5 py-4 cursor-pointer"
-                  onClick={() => setExpandedId(isExpanded ? null : b.id)}>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{b.name}</div>
-                    <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-light)' }}>
-                      {(b.district || b.province) && <>
-                        <span>{[b.district, b.province].filter(Boolean).join(', ')}</span>
-                        <span>·</span>
-                      </>}
-                      {b.google_map_url
-                        ? <span className="inline-flex items-center gap-1" style={{ color: 'var(--terracotta)' }}><MapPin size={11} /> มีแผนที่</span>
-                        : <span>ยังไม่มีแผนที่</span>}
-                      <span>·</span>
-                      <span>{b.facilities.length} facilities</span>
-                      <span>·</span>
-                      <span>{b.nearby.length} nearby</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={e => { e.stopPropagation(); openEdit(b) }}
-                      className="p-2 rounded-lg transition-colors hover:bg-gray-100" style={{ color: 'var(--text-mid)' }}>
-                      <Edit2 size={15} />
-                    </button>
-                    <button onClick={e => { e.stopPropagation(); setDeleteId(b.id) }}
-                      className="p-2 rounded-lg transition-colors hover:bg-red-50" style={{ color: '#dc2626' }}>
-                      <Trash2 size={15} />
-                    </button>
-                    {isExpanded ? <ChevronUp size={16} style={{ color: 'var(--text-light)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-light)' }} />}
-                  </div>
-                </div>
-
-                {isExpanded && (
-                  <div className="px-5 pb-4 pt-0 space-y-3" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
-                    {b.google_map_url && (
-                      <div className="pt-1">
-                        <a href={b.google_map_url} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2.5 rounded-xl transition-colors hover:opacity-90"
-                          style={{ color: 'white', background: 'var(--terracotta)' }}>
-                          <MapPin size={15} /> เปิด Google Maps <ExternalLink size={13} />
-                        </a>
-                      </div>
-                    )}
-                    <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs font-medium mb-2" style={{ color: 'var(--text-light)' }}>Facilities</div>
-                      {b.facilities.length === 0 && <p className="text-xs" style={{ color: 'var(--text-light)' }}>-</p>}
-                      <div className="flex flex-wrap gap-1.5">
-                        {b.facilities.map((f, i) => (
-                          <span key={i} className="px-2.5 py-1 rounded-full text-xs"
-                            style={{ background: 'rgba(135,168,120,0.15)', color: '#0F6E56' }}>{f}</span>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-medium mb-2" style={{ color: 'var(--text-light)' }}>สถานที่ใกล้เคียง</div>
-                      {b.nearby.length === 0 && <p className="text-xs" style={{ color: 'var(--text-light)' }}>-</p>}
-                      <div className="space-y-1">
-                        {b.nearby.map((n, i) => (
-                          <div key={i} className="text-xs" style={{ color: 'var(--text-mid)' }}>• {n}</div>
-                        ))}
-                      </div>
-                    </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-          </>}
-        </div>
+            }
+            page={safePage}
+            perPage={perPage}
+            total={filtered.length}
+            onPageChange={setCurrentPage}
+            headerVariant="terracotta"
+            minWidth={700}
+          />
+        )}
       </main>
 
       {/* Form Modal */}

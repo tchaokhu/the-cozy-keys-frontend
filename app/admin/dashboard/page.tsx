@@ -23,7 +23,7 @@ export default function AdminDashboard() {
   const reserved = properties.filter(p => p.status === 'reserved').length
   const newInquiries = inquiries.filter(i => i.status === 'new').length
   const totalRevenue = properties
-    .filter(p => p.status === 'rented')
+    .filter(p => p.status === 'rented' && p.rented_by_us)
     .reduce((sum, p) => sum + p.price_monthly, 0)
 
   return (

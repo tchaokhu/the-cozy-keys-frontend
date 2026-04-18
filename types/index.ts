@@ -41,7 +41,8 @@ export interface Property {
   district: string
   province: string
   status: PropertyStatus
-  reserved_until?: string
+  rented_until?: string
+  rented_by_us?: boolean
   images: string[]
   contact_line?: string
   owner_id?: string

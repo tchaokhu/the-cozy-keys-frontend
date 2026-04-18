@@ -1,18 +1,27 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Plus, Edit2, Trash2, Phone, Mail, MessageCircle, Users } from 'lucide-react'
+import { Plus, Search, Edit2, Trash2, Phone, Mail, MessageCircle, Users } from 'lucide-react'
 import { getOwners, createOwner, updateOwner, deleteOwner } from '@/lib/supabase'
 import type { Owner } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import AdminTable, { Column } from '@/components/admin/AdminTable'
 
 const FIELD = 'w-full px-4 py-2.5 rounded-xl text-sm border outline-none transition-colors'
 const FIELD_STYLE = { background: 'white', borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-dark)' }
 
 const EMPTY_FORM = { name: '', phone: '', email: '', line_id: '', source: '', note: '' }
 
+type SortKey = 'name' | 'source'
+type SortDir = 'asc' | 'desc'
+
 export default function AdminOwnersPage() {
   const [owners, setOwners] = useState<Owner[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const perPage = 10
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false)
@@ -25,9 +34,22 @@ export default function AdminOwnersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      if (sortDir === 'asc') setSortDir('desc')
+      else { setSortKey(null); setSortDir('asc') }
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+    setCurrentPage(1)
+  }
+
   useEffect(() => {
     getOwners().then(data => { setOwners(data); setLoading(false) })
   }, [])
+
+  useEffect(() => { setCurrentPage(1) }, [search])
 
   const openAdd = () => {
     setEditing(null)
@@ -85,6 +107,95 @@ export default function AdminOwnersPage() {
     }
   }
 
+  let filtered = owners
+  if (search) {
+    const q = search.toLowerCase()
+    filtered = filtered.filter(o =>
+      o.name.toLowerCase().includes(q) ||
+      (o.phone?.toLowerCase().includes(q) ?? false) ||
+      (o.email?.toLowerCase().includes(q) ?? false) ||
+      (o.line_id?.toLowerCase().includes(q) ?? false) ||
+      (o.source?.toLowerCase().includes(q) ?? false)
+    )
+  }
+
+  if (sortKey) {
+    filtered = [...filtered].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name': cmp = a.name.localeCompare(b.name, 'th'); break
+        case 'source': cmp = (a.source || '').localeCompare(b.source || '', 'th'); break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
+  const safePage = Math.min(currentPage, totalPages)
+  const paginated = filtered.slice((safePage - 1) * perPage, safePage * perPage)
+
+  const ownerColumns: Column<Owner>[] = [
+    {
+      key: 'name',
+      label: 'ชื่อ',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-28 rounded" />,
+      render: o => (
+        <div className="font-medium text-sm" style={{ color: 'var(--brown)' }}>{o.name}</div>
+      ),
+    },
+    {
+      key: 'contact',
+      label: 'ติดต่อ',
+      headerAlign: 'center',
+      skeleton: (
+        <div className="space-y-1.5">
+          <div className="skeleton h-3 w-24 rounded" />
+          <div className="skeleton h-3 w-32 rounded" />
+        </div>
+      ),
+      render: o => (
+        <div className="flex flex-col gap-1">
+          {o.phone && (
+            <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-mid)' }}>
+              <Phone size={11} /> {o.phone}
+            </span>
+          )}
+          {o.email && (
+            <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-mid)' }}>
+              <Mail size={11} /> {o.email}
+            </span>
+          )}
+          {o.line_id && (
+            <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-mid)' }}>
+              <MessageCircle size={11} /> {o.line_id}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'source',
+      label: 'เจอจากไหน',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-20 rounded" />,
+      render: o => (
+        <span className="text-sm" style={{ color: 'var(--text-mid)' }}>{o.source || '—'}</span>
+      ),
+    },
+    {
+      key: 'note',
+      label: 'หมายเหตุ',
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-24 rounded" />,
+      render: o => (
+        <span className="text-sm" style={{ color: 'var(--text-light)' }}>{o.note || '—'}</span>
+      ),
+    },
+  ]
+
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
@@ -104,40 +215,16 @@ export default function AdminOwnersPage() {
           </button>
         </div>
 
-        {loading ? (
-          <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-            <table className="w-full">
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(196,98,45,0.08)', background: 'var(--cream)' }}>
-                  {['ชื่อ', 'ติดต่อ', 'เจอจากไหน', 'หมายเหตุ', ''].map(h => (
-                    <th key={h} className="text-left px-5 py-3.5 text-xs font-medium" style={{ color: 'var(--text-light)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-28 rounded" /></td>
-                    <td className="px-5 py-4">
-                      <div className="space-y-1.5">
-                        <div className="skeleton h-3 w-24 rounded" />
-                        <div className="skeleton h-3 w-32 rounded" />
-                      </div>
-                    </td>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-20 rounded" /></td>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-24 rounded" /></td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2">
-                        <div className="skeleton h-7 w-7 rounded-lg" />
-                        <div className="skeleton h-7 w-7 rounded-lg" />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : owners.length === 0 ? (
+        {/* Search */}
+        <div className="relative mb-6 max-w-md">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-light)' }} />
+          <input type="text" placeholder="ค้นหาชื่อ / เบอร์ / อีเมล / LINE / แหล่งที่มา..." value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm border outline-none"
+            style={{ background: 'white', borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
+        </div>
+
+        {!loading && owners.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 gap-3">
             <Users size={40} style={{ color: 'var(--text-light)', opacity: 0.4 }} />
             <p className="text-sm" style={{ color: 'var(--text-light)' }}>ยังไม่มีข้อมูลเจ้าของ</p>
@@ -147,72 +234,46 @@ export default function AdminOwnersPage() {
             </button>
           </div>
         ) : (
-          <div className="rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-            <table className="w-full">
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(196,98,45,0.08)', background: 'var(--cream)' }}>
-                  {['ชื่อ', 'ติดต่อ', 'เจอจากไหน', 'หมายเหตุ', ''].map(h => (
-                    <th key={h} className="text-left px-5 py-3.5 text-xs font-medium" style={{ color: 'var(--text-light)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {owners.map(o => (
-                  <tr key={o.id} className="border-b transition-colors"
-                    style={{ borderColor: 'rgba(196,98,45,0.06)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,240,232,0.5)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td className="px-5 py-4">
-                      <div className="font-medium text-sm" style={{ color: 'var(--brown)' }}>{o.name}</div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex flex-col gap-1">
-                        {o.phone && (
-                          <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-mid)' }}>
-                            <Phone size={11} /> {o.phone}
-                          </span>
-                        )}
-                        {o.email && (
-                          <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-mid)' }}>
-                            <Mail size={11} /> {o.email}
-                          </span>
-                        )}
-                        {o.line_id && (
-                          <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-mid)' }}>
-                            <MessageCircle size={11} /> {o.line_id}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-sm" style={{ color: 'var(--text-mid)' }}>{o.source || '—'}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-sm" style={{ color: 'var(--text-light)' }}>{o.note || '—'}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2">
-                        <button onClick={() => openEdit(o)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: 'var(--text-light)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                          <Edit2 size={15} />
-                        </button>
-                        <button onClick={() => setDeleteId(o.id)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ color: 'var(--text-light)' }}
-                          onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
-                          onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                          <Trash2 size={15} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable<Owner>
+            columns={ownerColumns}
+            data={paginated}
+            rowKey={o => o.id}
+            loading={loading}
+            skeletonRows={6}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={k => toggleSort(k as SortKey)}
+            headerVariant="terracotta"
+            minWidth={700}
+            renderActions={o => (
+              <>
+                <button onClick={() => openEdit(o)}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                  <Edit2 size={15} />
+                </button>
+                <button onClick={() => setDeleteId(o.id)}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
+                  <Trash2 size={15} />
+                </button>
+              </>
+            )}
+            actionsSkeleton={
+              <div className="flex gap-2 justify-center">
+                <div className="skeleton h-7 w-7 rounded-lg" />
+                <div className="skeleton h-7 w-7 rounded-lg" />
+              </div>
+            }
+            page={safePage}
+            perPage={perPage}
+            total={filtered.length}
+            onPageChange={setCurrentPage}
+          />
         )}
       </main>
 

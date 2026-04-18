@@ -1,10 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Edit2, Eye, Trash2, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, Search, Edit2, Eye, Trash2 } from 'lucide-react'
 import { getProperties, deleteProperty } from '@/lib/supabase'
 import type { Property } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import AdminTable, { Column } from '@/components/admin/AdminTable'
 
 const STATUS_STYLE = {
   available: { label: 'ว่าง', color: '#0F6E56', bg: 'rgba(135,168,120,0.15)' },
@@ -16,15 +17,6 @@ const STATUS_ORDER = { available: 0, reserved: 1, rented: 2 }
 
 type SortKey = 'title' | 'property_type' | 'district' | 'owner' | 'price_monthly' | 'status'
 type SortDir = 'asc' | 'desc'
-
-const COLUMNS: { key: SortKey; label: string }[] = [
-  { key: 'title', label: 'ทรัพย์' },
-  { key: 'property_type', label: 'ประเภท' },
-  { key: 'district', label: 'ทำเล' },
-  { key: 'owner', label: 'เจ้าของ' },
-  { key: 'price_monthly', label: 'ราคา/เดือน' },
-  { key: 'status', label: 'สถานะ' },
-]
 
 export default function AdminProperties() {
   const [properties, setProperties] = useState<Property[]>([])
@@ -68,7 +60,14 @@ export default function AdminProperties() {
   }
 
   let filtered = properties
-  if (search) filtered = filtered.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || p.district.includes(search))
+  if (search) {
+    const q = search.toLowerCase()
+    filtered = filtered.filter(p =>
+      p.title.toLowerCase().includes(q) ||
+      (p.title_en?.toLowerCase().includes(q) ?? false) ||
+      p.district.toLowerCase().includes(q)
+    )
+  }
   if (statusFilter) filtered = filtered.filter(p => p.status === statusFilter)
 
   if (sortKey) {
@@ -92,6 +91,95 @@ export default function AdminProperties() {
 
   // Reset to page 1 when filters change
   useEffect(() => { setCurrentPage(1) }, [search, statusFilter])
+
+  const columns: Column<Property>[] = [
+    {
+      key: 'title',
+      label: 'ทรัพย์',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: (
+        <div className="space-y-2">
+          <div className="skeleton h-4 w-40" />
+          <div className="skeleton h-3 w-28" />
+        </div>
+      ),
+      render: p => (
+        <>
+          <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{p.title_en || p.title}</div>
+          {p.title_en && (
+            <div className="text-xs" style={{ color: 'var(--text-mid)' }}>{p.title}</div>
+          )}
+          <div className="text-xs" style={{ color: 'var(--text-light)' }}>
+            {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
+          </div>
+        </>
+      ),
+    },
+    {
+      key: 'property_type',
+      label: 'ประเภท',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-16 mx-auto" />,
+      render: p => (
+        <span className="text-sm" style={{ color: 'var(--text-mid)' }}>{TYPE_LABEL[p.property_type]}</span>
+      ),
+    },
+    {
+      key: 'district',
+      label: 'ทำเล',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-20 mx-auto" />,
+      render: p => (
+        <span className="text-sm" style={{ color: 'var(--text-mid)' }}>{p.district}</span>
+      ),
+    },
+    {
+      key: 'owner',
+      label: 'เจ้าของ',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-24 mx-auto" />,
+      render: p => p.owner ? (
+        <div>
+          <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>{p.owner.name}</div>
+          {p.owner.source && (
+            <div className="text-xs" style={{ color: 'var(--text-light)' }}>{p.owner.source}</div>
+          )}
+        </div>
+      ) : (
+        <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>
+      ),
+    },
+    {
+      key: 'price_monthly',
+      label: 'ราคา/เดือน',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-20 mx-auto" />,
+      render: p => (
+        <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
+          ฿{p.price_monthly.toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      label: 'สถานะ',
+      sortable: true,
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-6 w-16 rounded-full mx-auto" />,
+      render: p => {
+        const s = STATUS_STYLE[p.status]
+        return (
+          <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
+            style={{ background: s.bg, color: s.color }}>{s.label}</span>
+        )
+      },
+    },
+  ]
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
@@ -159,7 +247,10 @@ export default function AdminProperties() {
               <div key={p.id} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
+                    <div className="font-medium text-sm truncate" style={{ color: 'var(--text-dark)' }}>{p.title_en || p.title}</div>
+                    {p.title_en && (
+                      <div className="text-xs truncate" style={{ color: 'var(--text-mid)' }}>{p.title}</div>
+                    )}
                     <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>
                       {TYPE_LABEL[p.property_type]} · {p.district}{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
                     </div>
@@ -201,173 +292,61 @@ export default function AdminProperties() {
         </div>
 
         {/* Desktop Table */}
-        {loading ? (
-        <div className="hidden md:block rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead>
-                <tr style={{ borderBottom: '2px solid rgba(196,98,45,0.12)', background: 'var(--terracotta)' }}>
-                  {COLUMNS.map(col => (
-                    <th key={col.key} className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider" style={{ color: '#fff' }}>
-                      {col.label}
-                    </th>
-                  ))}
-                  <th className="px-5 py-3.5" style={{ background: 'var(--terracotta)' }} />
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={i} className="border-b" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
-                    <td className="px-5 py-4">
-                      <div className="space-y-2">
-                        <div className="skeleton h-4 w-40" />
-                        <div className="skeleton h-3 w-28" />
-                      </div>
-                    </td>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-16 mx-auto" /></td>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-20 mx-auto" /></td>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-24 mx-auto" /></td>
-                    <td className="px-5 py-4"><div className="skeleton h-4 w-20 mx-auto" /></td>
-                    <td className="px-5 py-4"><div className="skeleton h-6 w-16 rounded-full mx-auto" /></td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2 justify-center">
-                        <div className="skeleton h-7 w-7 rounded-lg" />
-                        <div className="skeleton h-7 w-7 rounded-lg" />
-                        <div className="skeleton h-7 w-7 rounded-lg" />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        ) : (
-        <div className="hidden md:block rounded-2xl border overflow-hidden" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px]">
-              <thead>
-                <tr style={{ borderBottom: '2px solid rgba(196,98,45,0.12)', background: 'var(--terracotta)' }}>
-                  {COLUMNS.map(col => {
-                    const active = sortKey === col.key
-                    return (
-                      <th key={col.key}
-                        className="text-center px-5 py-3.5 text-xs font-semibold uppercase tracking-wider select-none transition-colors"
-                        style={{ color: '#fff', cursor: 'pointer' }}
-                        onClick={() => toggleSort(col.key)}>
-                        <span className="inline-flex items-center justify-center gap-1.5">
-                          {col.label}
-                          {active
-                            ? (sortDir === 'asc' ? <ArrowUp size={13} /> : <ArrowDown size={13} />)
-                            : <ArrowUpDown size={13} className="opacity-50" />}
-                        </span>
-                      </th>
-                    )
-                  })}
-                  <th className="px-5 py-3.5" style={{ background: 'var(--terracotta)' }} />
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((p: Property) => {
-                  const s = STATUS_STYLE[p.status]
-                  return (
-                    <tr key={p.id} className="border-b transition-colors"
-                      style={{ borderColor: 'rgba(196,98,45,0.06)' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(245,240,232,0.5)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                      <td className="px-5 py-4">
-                        <div className="font-medium text-sm" style={{ color: 'var(--text-dark)' }}>{p.title}</div>
-                        <div className="text-xs" style={{ color: 'var(--text-light)' }}>
-                          {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{TYPE_LABEL[p.property_type]}</td>
-                      <td className="px-5 py-4 text-sm" style={{ color: 'var(--text-mid)' }}>{p.district}</td>
-                      <td className="px-5 py-4">
-                        {p.owner ? (
-                          <div>
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>{p.owner.name}</div>
-                            {p.owner.source && (
-                              <div className="text-xs" style={{ color: 'var(--text-light)' }}>{p.owner.source}</div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
-                          ฿{p.price_monthly.toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
-                          style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex gap-2">
-                          <Link href={`/listings/${p.id}`}
-                            className="p-1.5 rounded-lg transition-colors"
-                            style={{ color: 'var(--text-light)' }}
-                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                            <Eye size={15} />
-                          </Link>
-                          <Link href={`/admin/properties/${p.id}/edit`}
-                            className="p-1.5 rounded-lg transition-colors"
-                            style={{ color: 'var(--text-light)' }}
-                            onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                            <Edit2 size={15} />
-                          </Link>
-                          <button onClick={() => setDeleteId(p.id)}
-                            className="p-1.5 rounded-lg transition-colors"
-                            style={{ color: 'var(--text-light)' }}
-                            onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
-                            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}>
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-4" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
-            <p className="text-xs" style={{ color: 'var(--text-light)' }}>
-              แสดง {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, filtered.length)} จาก {filtered.length} รายการ
-            </p>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-                className="p-2 rounded-lg border transition-colors disabled:opacity-30"
-                style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)', background: 'white' }}>
-                <ChevronLeft size={15} />
+        <AdminTable<Property>
+          className="hidden md:block"
+          columns={columns}
+          data={paginated}
+          rowKey={p => p.id}
+          loading={loading}
+          skeletonRows={6}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={k => toggleSort(k as SortKey)}
+          renderActions={p => (
+            <>
+              <Link
+                href={`/listings/${p.id}`}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--text-light)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
+              >
+                <Eye size={15} />
+              </Link>
+              <Link
+                href={`/admin/properties/${p.id}/edit`}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--text-light)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
+              >
+                <Edit2 size={15} />
+              </Link>
+              <button
+                onClick={() => setDeleteId(p.id)}
+                className="p-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--text-light)' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
+                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
+              >
+                <Trash2 size={15} />
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button key={page} onClick={() => setCurrentPage(page)}
-                  className="w-9 h-9 rounded-lg text-sm font-medium transition-colors"
-                  style={{
-                    background: page === safePage ? 'var(--terracotta)' : 'white',
-                    color: page === safePage ? 'white' : 'var(--text-mid)',
-                    border: page === safePage ? 'none' : '1px solid rgba(196,98,45,0.15)',
-                  }}>
-                  {page}
-                </button>
-              ))}
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-                className="p-2 rounded-lg border transition-colors disabled:opacity-30"
-                style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)', background: 'white' }}>
-                <ChevronRight size={15} />
-              </button>
+            </>
+          )}
+          actionsSkeleton={
+            <div className="flex gap-2 justify-center">
+              <div className="skeleton h-7 w-7 rounded-lg" />
+              <div className="skeleton h-7 w-7 rounded-lg" />
+              <div className="skeleton h-7 w-7 rounded-lg" />
             </div>
-          </div>
-        )}
-        </div>
-        )}
+          }
+          page={safePage}
+          perPage={perPage}
+          total={filtered.length}
+          onPageChange={setCurrentPage}
+          headerVariant="terracotta"
+          minWidth={700}
+        />
       </main>
 
       {/* Delete confirm dialog */}

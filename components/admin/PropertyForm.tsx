@@ -78,7 +78,8 @@ export default function PropertyForm({ mode, propertyId }: Props) {
     district: '',
     province: 'ชลบุรี',
     status: 'available' as PropertyStatus,
-    reserved_until: '',
+    rented_until: '',
+    rented_by_us: null as boolean | null,
     images: [] as string[],
     contact_line: '',
   })
@@ -104,7 +105,8 @@ export default function PropertyForm({ mode, propertyId }: Props) {
         district: p.district,
         province: p.province,
         status: p.status,
-        reserved_until: p.reserved_until || '',
+        rented_until: p.rented_until || '',
+        rented_by_us: p.rented_by_us ?? null,
         images: p.images || [],
         contact_line: p.contact_line || '',
       })
@@ -158,7 +160,11 @@ export default function PropertyForm({ mode, propertyId }: Props) {
     district: form.district,
     province: form.province,
     status: form.status,
-    reserved_until: form.status === 'reserved' && form.reserved_until ? form.reserved_until : undefined,
+    rented_until:
+      (form.status === 'reserved' || form.status === 'rented') && form.rented_until
+        ? form.rented_until
+        : undefined,
+    rented_by_us: form.status === 'rented' ? (form.rented_by_us ?? false) : false,
     images: form.images,
     contact_line: form.contact_line || undefined,
     owner_id: selectedOwnerId || undefined,
@@ -171,6 +177,16 @@ export default function PropertyForm({ mode, propertyId }: Props) {
     if (!form.title || !form.price_monthly || !form.area_sqm || !form.district) {
       setError('กรุณากรอกข้อมูลที่จำเป็น: ชื่อทรัพย์, ราคา, พื้นที่, เขต/อำเภอ')
       return
+    }
+    if (form.status === 'rented') {
+      if (!form.rented_until) {
+        setError('กรุณาระบุวันที่สิ้นสุดสัญญาเช่า')
+        return
+      }
+      if (form.rented_by_us === null) {
+        setError('กรุณาเลือกว่าเช่าผ่านเราหรือไม่')
+        return
+      }
     }
     setSaving(true)
     try {
@@ -343,12 +359,42 @@ export default function PropertyForm({ mode, propertyId }: Props) {
                     <option value="rented">เช่าแล้ว</option>
                   </select>
                 </div>
-                {form.status === 'reserved' && (
-                  <div>
-                    <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>จองถึงวันที่</label>
-                    <input type="date" className={FIELD} style={FIELD_STYLE} value={form.reserved_until}
-                      onChange={e => set('reserved_until', e.target.value)} />
-                  </div>
+                {form.status === 'rented' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เช่าถึงวันที่</label>
+                      <input type="date" className={FIELD} style={FIELD_STYLE} value={form.rented_until}
+                        onChange={e => set('rented_until', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เช่าผ่านเรา?</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { val: true, label: 'ใช่', sub: 'รวมเป็นรายได้' },
+                          { val: false, label: 'ไม่', sub: 'เจ้าของเช่าเอง' },
+                        ].map(opt => {
+                          const active = form.rented_by_us === opt.val
+                          return (
+                            <label key={String(opt.val)}
+                              className="flex items-center gap-2 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors"
+                              style={{
+                                background: active ? 'rgba(196,98,45,0.08)' : 'white',
+                                borderColor: active ? 'var(--terracotta)' : 'rgba(196,98,45,0.2)',
+                              }}>
+                              <input type="radio" name="rented_by_us"
+                                checked={active}
+                                onChange={() => set('rented_by_us', opt.val)}
+                                className="w-4 h-4" style={{ accentColor: 'var(--terracotta)' }} />
+                              <span className="text-sm" style={{ color: active ? 'var(--terracotta)' : 'var(--text-dark)' }}>
+                                <span className="font-medium">{opt.label}</span>
+                                <span className="text-xs ml-1" style={{ color: 'var(--text-light)' }}>· {opt.sub}</span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
                 )}
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>จำนวนห้องนอน</label>

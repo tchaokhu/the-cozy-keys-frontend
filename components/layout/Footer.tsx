@@ -93,7 +93,13 @@ export default function Footer() {
         <div className="flex flex-col md:flex-row justify-between items-center gap-3 text-xs"
           style={{ color: 'rgba(245,240,232,0.3)' }}>
           <span>© 2025 The Cozy Keys. สงวนลิขสิทธิ์.</span>
-          <span>ศรีราชา · แหลมฉบัง · ชลบุรี</span>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="transition-colors duration-200"
+              style={{ color: 'rgba(245,240,232,0.5)' }}>
+              นโยบายความเป็นส่วนตัว
+            </Link>
+            <span>ศรีราชา · แหลมฉบัง · ชลบุรี</span>
+          </div>
         </div>
       </div>
     </footer>
