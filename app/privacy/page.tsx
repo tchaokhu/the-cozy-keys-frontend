@@ -1,10 +1,6 @@
+'use client'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-
-export const metadata = {
-  title: 'Privacy Policy | The Cozy Keys',
-  description: 'Privacy Policy for The Cozy Keys — นโยบายความเป็นส่วนตัว',
-}
 
 export default function PrivacyPage() {
   const lastUpdated = '18 เมษายน 2026'
