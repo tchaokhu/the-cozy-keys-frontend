@@ -3,12 +3,15 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { BarChart2, Home, Bell, Share2, Eye, Users, Menu, X, LogOut, Calendar, Building2 } from 'lucide-react'
+import { BarChart2, Home, Bell, Share2, Eye, Users, Menu, X, LogOut, Calendar, Building2, KeyRound, FileText, Wallet } from 'lucide-react'
 import { signOut } from '@/lib/supabase'
 
 const NAV = [
   { icon: <BarChart2 size={18} />, label: 'ภาพรวม', href: '/admin/dashboard' },
   { icon: <Home size={18} />, label: 'ทรัพย์ทั้งหมด', href: '/admin/properties' },
+  { icon: <FileText size={18} />, label: 'สัญญาเช่า', href: '/admin/rentals' },
+  { icon: <KeyRound size={18} />, label: 'ผู้เช่า', href: '/admin/tenants' },
+  { icon: <Wallet size={18} />, label: 'การชำระเงิน', href: '/admin/payments' },
   { icon: <Bell size={18} />, label: 'การติดต่อ', href: '/admin/inquiries' },
   { icon: <Users size={18} />, label: 'จัดการเจ้าของ', href: '/admin/owners' },
   { icon: <Building2 size={18} />, label: 'ตึก/โครงการ', href: '/admin/buildings' },
@@ -22,7 +25,7 @@ export default function AdminSidebar() {
   const [open, setOpen] = useState(false)
 
   const isActive = (href: string) =>
-    ['/admin/properties', '/admin/owners', '/admin/buildings'].includes(href)
+    ['/admin/properties', '/admin/owners', '/admin/buildings', '/admin/tenants', '/admin/rentals', '/admin/payments'].includes(href)
       ? pathname.startsWith(href)
       : pathname === href
 

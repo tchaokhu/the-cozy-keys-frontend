@@ -192,7 +192,7 @@ export default function AdminProperties() {
           <div className="flex flex-col items-center gap-1">
             <span className="px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap"
               style={{ background: s.bg, color: s.color }}>{s.label}</span>
-            <RentalBadge rented_until={p.rented_until} status={p.status} />
+            <RentalBadge rented_until={p.active_rental?.end_date} status={p.status} />
           </div>
         )
       },
@@ -216,15 +216,17 @@ export default function AdminProperties() {
           </Link>
         </div>
 
-        {/* Toolbar */}
+        {/* Search */}
+        <div className="relative mb-6 max-w-md">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-light)' }} />
+          <input type="text" placeholder="ค้นหาทรัพย์..." value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm border outline-none"
+            style={{ background: 'white', borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
+        </div>
+
+        {/* Status Filter */}
         <div className="flex gap-3 mb-6 flex-wrap">
-          <div className="relative flex-1 min-w-48">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-light)' }} />
-            <input type="text" placeholder="ค้นหาทรัพย์..." value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm border outline-none"
-              style={{ background: 'white', borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
-          </div>
           {['', 'available', 'reserved', 'rented'].map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className="px-4 py-2.5 rounded-xl text-sm font-medium border transition-all"
@@ -238,136 +240,71 @@ export default function AdminProperties() {
           ))}
         </div>
 
-        {/* Mobile Card View */}
-        <div className="block md:hidden space-y-3">
-          {loading ? Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="skeleton h-4 w-3/4" />
-                  <div className="skeleton h-3 w-1/2" />
-                </div>
-                <div className="skeleton h-6 w-16 rounded-full ml-2" />
+        {!loading && properties.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-3">
+            <div className="text-4xl">🏠</div>
+            <p className="text-sm" style={{ color: 'var(--text-light)' }}>ยังไม่มีข้อมูลทรัพย์</p>
+            <Link href="/admin/properties/new"
+              className="text-sm font-medium" style={{ color: 'var(--terracotta)' }}>
+              เพิ่มทรัพย์แรก
+            </Link>
+          </div>
+        ) : (
+          <AdminTable<Property>
+            columns={columns}
+            data={paginated}
+            rowKey={p => p.id}
+            loading={loading}
+            skeletonRows={6}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSort={k => toggleSort(k as SortKey)}
+            renderActions={p => (
+              <>
+                <Link
+                  href={`/listings/${p.id}`}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
+                >
+                  <Eye size={15} />
+                </Link>
+                <Link
+                  href={`/admin/properties/${p.id}/edit`}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
+                >
+                  <Edit2 size={15} />
+                </Link>
+                <button
+                  onClick={() => setDeleteId(p.id)}
+                  className="p-1.5 rounded-lg transition-colors"
+                  style={{ color: 'var(--text-light)' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
+                  onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </>
+            )}
+            actionsSkeleton={
+              <div className="flex gap-2 justify-center">
+                <div className="skeleton h-7 w-7 rounded-lg" />
+                <div className="skeleton h-7 w-7 rounded-lg" />
+                <div className="skeleton h-7 w-7 rounded-lg" />
               </div>
-              <div className="flex items-center justify-between mt-3">
-                <div className="skeleton h-5 w-24" />
-                <div className="skeleton h-3 w-32" />
-              </div>
-              <div className="flex gap-2 mt-3 pt-2" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
-                <div className="skeleton h-8 flex-1 rounded-xl" />
-                <div className="skeleton h-8 flex-1 rounded-xl" />
-                <div className="skeleton h-8 flex-1 rounded-xl" />
-              </div>
-            </div>
-          )) : paginated.map((p: Property) => {
-            const s = STATUS_STYLE[p.status]
-            return (
-              <div key={p.id} className="rounded-2xl border p-4" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate" style={{ color: 'var(--text-dark)' }}>{p.title_en || p.title}</div>
-                    {p.title_en && (
-                      <div className="text-xs truncate" style={{ color: 'var(--text-mid)' }}>{p.title}</div>
-                    )}
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>
-                      {TYPE_LABEL[p.property_type]} · {p.district}{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 ml-2 shrink-0">
-                    <span className="px-2.5 py-1 rounded-full text-xs font-medium"
-                      style={{ background: s.bg, color: s.color }}>{s.label}</span>
-                    <RentalBadge rented_until={p.rented_until} status={p.status} />
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-3">
-                  <div>
-                    <span className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
-                      ฿{p.price_monthly.toLocaleString()}
-                    </span>
-                    <span className="text-xs ml-1" style={{ color: 'var(--text-light)' }}>/เดือน</span>
-                  </div>
-                  <div className="text-xs" style={{ color: 'var(--text-light)' }}>
-                    {p.bedrooms} นอน · {p.bathrooms} น้ำ · {p.area_sqm} ตร.ม.{p.building ? ` · ${p.building}` : ''}{p.floor ? ` · ชั้น ${p.floor}` : ''}{p.room_number ? ` · ห้อง ${p.room_number}` : ''}
-                  </div>
-                </div>
-                {p.owner && (
-                  <div className="mt-2 pt-2" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
-                    <div className="text-xs" style={{ color: 'var(--text-light)' }}>เจ้าของ</div>
-                    <div className="text-sm font-medium" style={{ color: 'var(--text-dark)' }}>
-                      {p.owner.name}
-                      {p.owner.source && <span className="font-normal text-xs ml-1" style={{ color: 'var(--text-light)' }}>({p.owner.source})</span>}
-                    </div>
-                  </div>
-                )}
-                <div className="flex gap-2 mt-3 pt-2" style={{ borderTop: '1px solid rgba(196,98,45,0.08)' }}>
-                  <Link href={`/listings/${p.id}`} className="flex-1 text-center py-2 rounded-xl text-xs font-medium border"
-                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)' }}>ดู</Link>
-                  <Link href={`/admin/properties/${p.id}/edit`} className="flex-1 text-center py-2 rounded-xl text-xs font-medium border"
-                    style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-mid)' }}>แก้ไข</Link>
-                  <button onClick={() => setDeleteId(p.id)} className="flex-1 text-center py-2 rounded-xl text-xs font-medium border"
-                    style={{ borderColor: 'rgba(220,38,38,0.2)', color: '#dc2626' }}>ลบ</button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Desktop Table */}
-        <AdminTable<Property>
-          className="hidden md:block"
-          columns={columns}
-          data={paginated}
-          rowKey={p => p.id}
-          loading={loading}
-          skeletonRows={6}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={k => toggleSort(k as SortKey)}
-          renderActions={p => (
-            <>
-              <Link
-                href={`/listings/${p.id}`}
-                className="p-1.5 rounded-lg transition-colors"
-                style={{ color: 'var(--text-light)' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
-              >
-                <Eye size={15} />
-              </Link>
-              <Link
-                href={`/admin/properties/${p.id}/edit`}
-                className="p-1.5 rounded-lg transition-colors"
-                style={{ color: 'var(--text-light)' }}
-                onMouseEnter={e => (e.currentTarget.style.color = 'var(--terracotta)')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
-              >
-                <Edit2 size={15} />
-              </Link>
-              <button
-                onClick={() => setDeleteId(p.id)}
-                className="p-1.5 rounded-lg transition-colors"
-                style={{ color: 'var(--text-light)' }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#dc2626')}
-                onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-light)')}
-              >
-                <Trash2 size={15} />
-              </button>
-            </>
-          )}
-          actionsSkeleton={
-            <div className="flex gap-2 justify-center">
-              <div className="skeleton h-7 w-7 rounded-lg" />
-              <div className="skeleton h-7 w-7 rounded-lg" />
-              <div className="skeleton h-7 w-7 rounded-lg" />
-            </div>
-          }
-          page={safePage}
-          perPage={perPage}
-          total={filtered.length}
-          onPageChange={setCurrentPage}
-          headerVariant="terracotta"
-          minWidth={700}
-        />
+            }
+            page={safePage}
+            perPage={perPage}
+            total={filtered.length}
+            onPageChange={setCurrentPage}
+            headerVariant="terracotta"
+            minWidth={700}
+          />
+        )}
       </main>
 
       {/* Delete confirm dialog */}

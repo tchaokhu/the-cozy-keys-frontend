@@ -2,19 +2,21 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, TrendingUp, AlertTriangle, Clock } from 'lucide-react'
-import { getProperties, getInquiries, getRentalStatus } from '@/lib/supabase'
-import type { Property, Inquiry } from '@/types'
+import { getProperties, getInquiries, getRentalStatus, getPayments, getPaymentStatus } from '@/lib/supabase'
+import type { Property, Inquiry, Payment } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 
 export default function AdminDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([getProperties(), getInquiries()]).then(([p, i]) => {
+    Promise.all([getProperties(), getInquiries(), getPayments()]).then(([p, i, pay]) => {
       setProperties(p)
       setInquiries(i)
+      setPayments(pay)
       setLoading(false)
     })
   }, [])
@@ -23,12 +25,17 @@ export default function AdminDashboard() {
   const reserved = properties.filter(p => p.status === 'reserved').length
   const newInquiries = inquiries.filter(i => i.status === 'new').length
   const totalRevenue = properties
-    .filter(p => p.status === 'rented' && p.rented_by_us)
-    .reduce((sum, p) => sum + p.price_monthly, 0)
+    .filter(p => p.status === 'rented' && p.active_rental?.rented_by_us)
+    .reduce((sum, p) => sum + (p.active_rental?.monthly_rent ?? p.price_monthly), 0)
+
+  const paymentsWithStatus = payments.map(p => ({ p, status: getPaymentStatus(p) }))
+  const overduePayments = paymentsWithStatus.filter(x => x.status === 'overdue' || x.status === 'partial')
+  const overdueTotal = overduePayments.reduce((sum, x) => sum + (x.p.amount - (x.p.paid_amount ?? 0)), 0)
+  const overdueCount = overduePayments.length
 
   const rentedWithExpiry = properties
-    .filter(p => p.status === 'rented' && p.rented_until)
-    .map(p => ({ p, ...getRentalStatus(p.rented_until) }))
+    .filter(p => p.status === 'rented' && p.active_rental?.end_date)
+    .map(p => ({ p, ...getRentalStatus(p.active_rental?.end_date) }))
   const expiring = rentedWithExpiry
     .filter(x => x.state === 'expiring')
     .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0))
@@ -58,8 +65,8 @@ export default function AdminDashboard() {
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-          {loading ? Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-5 mb-10">
+          {loading ? Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="rounded-2xl p-5 border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="skeleton w-10 h-10 rounded-xl" />
@@ -73,6 +80,13 @@ export default function AdminDashboard() {
             { label: 'จองแล้ว', val: reserved, icon: '📋', color: '#854F0B', bg: 'rgba(239,159,39,0.1)' },
             { label: 'ติดต่อใหม่', val: newInquiries, icon: '🔔', color: 'var(--terracotta)', bg: 'rgba(196,98,45,0.1)' },
             { label: 'รายได้เช่า/เดือน', val: `฿${totalRevenue.toLocaleString()}`, icon: '💰', color: '#185FA5', bg: 'rgba(55,138,221,0.1)' },
+            {
+              label: overdueCount > 0 ? `ค้างชำระ ${overdueCount} รายการ` : 'ค้างชำระ',
+              val: `฿${overdueTotal.toLocaleString()}`,
+              icon: '⚠️',
+              color: overdueTotal > 0 ? '#A32D2D' : 'var(--text-light)',
+              bg: overdueTotal > 0 ? 'rgba(226,75,74,0.1)' : 'rgba(107,68,35,0.06)',
+            },
           ].map(({ label, val, icon, color, bg }) => (
             <div key={label} className="rounded-2xl p-5 border" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
               <div className="flex items-center justify-between mb-3">
@@ -104,7 +118,7 @@ export default function AdminDashboard() {
             <div className="divide-y" style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
               {expiryAlerts.map(({ p, daysLeft, state }) => {
                 const isExpired = state === 'expired'
-                const endDate = p.rented_until ? new Date(p.rented_until).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+                const endDate = p.active_rental?.end_date ? new Date(p.active_rental.end_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
                 return (
                   <Link key={p.id} href={`/admin/properties/${p.id}/edit`}
                     className="flex items-center justify-between px-6 py-4 transition-colors hover:bg-[rgba(196,98,45,0.03)]">

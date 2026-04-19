@@ -41,7 +41,9 @@ export interface Property {
   district: string
   province: string
   status: PropertyStatus
+  /** @deprecated use active_rental.end_date — kept for DB backward compat only */
   rented_until?: string
+  /** @deprecated use active_rental.rented_by_us — kept for DB backward compat only */
   rented_by_us?: boolean
   images: string[]
   contact_line?: string
@@ -49,6 +51,67 @@ export interface Property {
   owner?: Owner
   building_id?: string
   buildingInfo?: Building
+  active_rental?: Rental
+  created_at: string
+  updated_at: string
+}
+
+export interface Tenant {
+  id: string
+  name: string
+  phone?: string
+  email?: string
+  line_id?: string
+  id_card?: string
+  address?: string
+  emergency_contact?: string
+  note?: string
+  created_at: string
+  updated_at: string
+  active_rental_count?: number
+}
+
+export type RentalStatus = 'active' | 'ended' | 'cancelled'
+
+export interface Rental {
+  id: string
+  property_id: string
+  tenant_id?: string
+  tenant?: Tenant
+  tenant_name_snapshot: string
+  tenant_phone_snapshot?: string
+  start_date: string
+  end_date: string
+  monthly_rent: number
+  deposit: number
+  commission: number
+  rented_by_us: boolean
+  status: RentalStatus
+  ended_at?: string
+  ended_reason?: string
+  note?: string
+  property?: Property
+  created_at: string
+  updated_at: string
+}
+
+export type PaymentType = 'rent' | 'deposit' | 'commission' | 'other'
+export type PaymentMethod = 'cash' | 'transfer' | 'other'
+export type PaymentStatus = 'paid' | 'partial' | 'overdue' | 'pending'
+
+export interface Payment {
+  id: string
+  rental_id: string
+  property_id: string
+  type: PaymentType
+  due_date: string
+  amount: number
+  paid_date?: string
+  paid_amount?: number
+  method?: PaymentMethod
+  note?: string
+  rental?: Rental
+  property?: Property
   created_at: string
   updated_at: string
 }

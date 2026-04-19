@@ -2,12 +2,14 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Save, User, Building2, Sparkles, MapPin } from 'lucide-react'
-import { createProperty, updateProperty, getPropertyById, getOwners, getBuildings } from '@/lib/supabase'
-import type { PropertyType, PropertyStatus, Owner, Building } from '@/types'
+import { ArrowLeft, Plus, Save, User, Building2, Sparkles, MapPin, FileText, AlertCircle, Edit2, Ban, Wallet, CheckCircle, Circle } from 'lucide-react'
+import { createProperty, updateProperty, getPropertyById, getOwners, getBuildings, getActiveRental, getPaymentsByRental, getPaymentStatus } from '@/lib/supabase'
+import type { PropertyType, PropertyStatus, Owner, Building, Property, Rental, Payment, PaymentStatus } from '@/types'
 import ImageManager from '@/components/admin/ImageManager'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import SearchableSelect from '@/components/admin/SearchableSelect'
+import RentalModal, { RentalModalMode } from '@/components/admin/RentalModal'
+import PaymentMarkPaidModal from '@/components/admin/PaymentMarkPaidModal'
 
 const DISTRICT_OPTIONS = ['ศรีราชา', 'แหลมฉบัง', 'บ้านบึง']
 const PROVINCE_OPTIONS = ['ชลบุรี']
@@ -34,6 +36,12 @@ export default function PropertyForm({ mode, propertyId }: Props) {
   const [selectedOwnerId, setSelectedOwnerId] = useState('')
   const [buildings, setBuildings] = useState<Building[]>([])
   const [selectedBuildingId, setSelectedBuildingId] = useState('')
+
+  const [activeRental, setActiveRental] = useState<Rental | null>(null)
+  const [savedProperty, setSavedProperty] = useState<Property | null>(null)
+  const [rentalModalMode, setRentalModalMode] = useState<RentalModalMode | null>(null)
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [paymentModal, setPaymentModal] = useState<Payment | null>(null)
 
   useEffect(() => {
     getOwners().then(setOwners)
@@ -78,8 +86,6 @@ export default function PropertyForm({ mode, propertyId }: Props) {
     district: '',
     province: 'ชลบุรี',
     status: 'available' as PropertyStatus,
-    rented_until: '',
-    rented_by_us: null as boolean | null,
     images: [] as string[],
     contact_line: '',
   })
@@ -87,7 +93,7 @@ export default function PropertyForm({ mode, propertyId }: Props) {
   // Load existing property for edit mode
   useEffect(() => {
     if (!isEdit || !propertyId) return
-    getPropertyById(propertyId).then(p => {
+    Promise.all([getPropertyById(propertyId), getActiveRental(propertyId)]).then(async ([p, r]) => {
       if (!p) { setNotFound(true); setLoading(false); return }
       setForm({
         title: p.title,
@@ -105,16 +111,38 @@ export default function PropertyForm({ mode, propertyId }: Props) {
         district: p.district,
         province: p.province,
         status: p.status,
-        rented_until: p.rented_until || '',
-        rented_by_us: p.rented_by_us ?? null,
         images: p.images || [],
         contact_line: p.contact_line || '',
       })
       if (p.owner_id) setSelectedOwnerId(p.owner_id)
       if (p.building_id) setSelectedBuildingId(p.building_id)
+      setSavedProperty(p)
+      setActiveRental(r)
+      if (r) {
+        try { setPayments(await getPaymentsByRental(r.id)) }
+        catch { setPayments([]) }
+      }
       setLoading(false)
     })
   }, [isEdit, propertyId])
+
+  const reloadPayments = async (rentalId: string) => {
+    try { setPayments(await getPaymentsByRental(rentalId)) }
+    catch { setPayments([]) }
+  }
+
+  const reloadActiveRental = async () => {
+    if (!propertyId) return
+    const r = await getActiveRental(propertyId)
+    setActiveRental(r)
+    if (r) await reloadPayments(r.id)
+    else setPayments([])
+    const p = await getPropertyById(propertyId)
+    if (p) {
+      setSavedProperty(p)
+      setForm(f => ({ ...f, status: p.status }))
+    }
+  }
 
   const set = (field: string, value: unknown) =>
     setForm(f => ({ ...f, [field]: value }))
@@ -160,11 +188,6 @@ export default function PropertyForm({ mode, propertyId }: Props) {
     district: form.district,
     province: form.province,
     status: form.status,
-    rented_until:
-      (form.status === 'reserved' || form.status === 'rented') && form.rented_until
-        ? form.rented_until
-        : undefined,
-    rented_by_us: form.status === 'rented' ? (form.rented_by_us ?? false) : false,
     images: form.images,
     contact_line: form.contact_line || undefined,
     owner_id: selectedOwnerId || undefined,
@@ -178,15 +201,9 @@ export default function PropertyForm({ mode, propertyId }: Props) {
       setError('กรุณากรอกข้อมูลที่จำเป็น: ชื่อทรัพย์, ราคา, พื้นที่, เขต/อำเภอ')
       return
     }
-    if (form.status === 'rented') {
-      if (!form.rented_until) {
-        setError('กรุณาระบุวันที่สิ้นสุดสัญญาเช่า')
-        return
-      }
-      if (form.rented_by_us === null) {
-        setError('กรุณาเลือกว่าเช่าผ่านเราหรือไม่')
-        return
-      }
+    if (form.status === 'rented' && !activeRental) {
+      setError('สถานะ "เช่าแล้ว" ต้องมีสัญญาเช่าก่อน — กรุณาสร้างสัญญาในหัวข้อ "สัญญาเช่า"')
+      return
     }
     setSaving(true)
     try {
@@ -359,43 +376,6 @@ export default function PropertyForm({ mode, propertyId }: Props) {
                     <option value="rented">เช่าแล้ว</option>
                   </select>
                 </div>
-                {form.status === 'rented' && (
-                  <>
-                    <div>
-                      <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เช่าถึงวันที่</label>
-                      <input type="date" className={FIELD} style={FIELD_STYLE} value={form.rented_until}
-                        onChange={e => set('rented_until', e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เช่าผ่านเรา?</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { val: true, label: 'ใช่', sub: 'รวมเป็นรายได้' },
-                          { val: false, label: 'ไม่', sub: 'เจ้าของเช่าเอง' },
-                        ].map(opt => {
-                          const active = form.rented_by_us === opt.val
-                          return (
-                            <label key={String(opt.val)}
-                              className="flex items-center gap-2 px-3 py-2.5 rounded-xl border cursor-pointer transition-colors"
-                              style={{
-                                background: active ? 'rgba(196,98,45,0.08)' : 'white',
-                                borderColor: active ? 'var(--terracotta)' : 'rgba(196,98,45,0.2)',
-                              }}>
-                              <input type="radio" name="rented_by_us"
-                                checked={active}
-                                onChange={() => set('rented_by_us', opt.val)}
-                                className="w-4 h-4" style={{ accentColor: 'var(--terracotta)' }} />
-                              <span className="text-sm" style={{ color: active ? 'var(--terracotta)' : 'var(--text-dark)' }}>
-                                <span className="font-medium">{opt.label}</span>
-                                <span className="text-xs ml-1" style={{ color: 'var(--text-light)' }}>· {opt.sub}</span>
-                              </span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>จำนวนห้องนอน</label>
                   <select className={FIELD} style={FIELD_STYLE} value={form.bedrooms}
@@ -427,6 +407,157 @@ export default function PropertyForm({ mode, propertyId }: Props) {
                 </div>
               </div>
             </section>
+
+            {/* Rental Contract */}
+            {isEdit && savedProperty && (
+              <section className="rounded-2xl border p-6 space-y-4"
+                style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                <div className="flex items-center gap-2">
+                  <FileText size={16} style={{ color: 'var(--terracotta)' }} />
+                  <h2 className="font-serif font-semibold" style={{ color: 'var(--brown)' }}>สัญญาเช่า</h2>
+                </div>
+
+                {activeRental ? (
+                  <div className="rounded-xl border p-4 space-y-3"
+                    style={{ background: 'rgba(196,98,45,0.04)', borderColor: 'rgba(196,98,45,0.15)' }}>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs" style={{ color: 'var(--text-light)' }}>ผู้เช่า</p>
+                        <p className="font-medium" style={{ color: 'var(--text-dark)' }}>{activeRental.tenant_name_snapshot}</p>
+                        {activeRental.tenant_phone_snapshot && (
+                          <p className="text-xs" style={{ color: 'var(--text-mid)' }}>{activeRental.tenant_phone_snapshot}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs" style={{ color: 'var(--text-light)' }}>ค่าเช่า/เดือน</p>
+                        <p className="font-medium" style={{ color: 'var(--text-dark)' }}>
+                          {Number(activeRental.monthly_rent).toLocaleString()} บาท
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs" style={{ color: 'var(--text-light)' }}>ระยะเวลา</p>
+                        <p className="text-sm" style={{ color: 'var(--text-dark)' }}>
+                          {activeRental.start_date} → {activeRental.end_date}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs" style={{ color: 'var(--text-light)' }}>เช่าผ่านเรา</p>
+                        <p className="text-sm" style={{ color: 'var(--text-dark)' }}>
+                          {activeRental.rented_by_us ? 'ใช่' : 'ไม่ใช่'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => setRentalModalMode('edit')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+                        style={{ borderColor: 'rgba(196,98,45,0.3)', color: 'var(--terracotta)', background: 'white' }}>
+                        <Edit2 size={12} /> แก้ไขสัญญา
+                      </button>
+                      <button type="button" onClick={() => setRentalModalMode('end')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                        style={{ background: '#dc2626' }}>
+                        <Ban size={12} /> ปิดสัญญา
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {form.status === 'rented' && (
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+                        style={{ background: 'rgba(239,159,39,0.1)', color: '#854F0B' }}>
+                        <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                        <span>สถานะ &quot;เช่าแล้ว&quot; ต้องมีสัญญาเช่า — กรุณาสร้างสัญญาก่อนบันทึก</span>
+                      </div>
+                    )}
+                    <button type="button" onClick={() => setRentalModalMode('create')}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white"
+                      style={{ background: 'var(--terracotta)' }}>
+                      <Plus size={14} /> สร้างสัญญาเช่า
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {isEdit && !savedProperty && !loading && null}
+
+            {/* Payment Schedule */}
+            {isEdit && savedProperty && activeRental && (
+              <section className="rounded-2xl border p-6 space-y-4"
+                style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wallet size={16} style={{ color: 'var(--terracotta)' }} />
+                    <h2 className="font-serif font-semibold" style={{ color: 'var(--brown)' }}>ประวัติการชำระ</h2>
+                    <span className="text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(196,98,45,0.08)', color: 'var(--terracotta)' }}>
+                      {payments.length} งวด
+                    </span>
+                  </div>
+                  <Link href="/admin/payments" className="text-xs font-medium" style={{ color: 'var(--terracotta)' }}>
+                    ดูทั้งหมด →
+                  </Link>
+                </div>
+
+                {payments.length === 0 ? (
+                  <p className="text-xs" style={{ color: 'var(--text-light)' }}>ยังไม่มีรายการชำระ</p>
+                ) : (
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'rgba(196,98,45,0.1)' }}>
+                    {payments.map(pay => {
+                      const status: PaymentStatus = getPaymentStatus(pay)
+                      const statusColor = status === 'paid' ? '#0F6E56'
+                        : status === 'partial' ? '#854F0B'
+                        : status === 'overdue' ? '#A32D2D'
+                        : 'var(--text-light)'
+                      const typeLabel = pay.type === 'rent' ? 'ค่าเช่า'
+                        : pay.type === 'deposit' ? 'เงินประกัน'
+                        : pay.type === 'commission' ? 'ค่านายหน้า' : 'อื่นๆ'
+                      const dueText = new Date(pay.due_date).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+                      return (
+                        <div key={pay.id}
+                          className="flex items-center gap-3 px-4 py-3 border-b last:border-b-0"
+                          style={{ borderColor: 'rgba(196,98,45,0.06)' }}>
+                          {status === 'paid' ? (
+                            <CheckCircle size={16} style={{ color: '#0F6E56' }} />
+                          ) : (
+                            <Circle size={16} style={{ color: statusColor }} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="font-medium" style={{ color: 'var(--text-dark)' }}>{dueText}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(196,98,45,0.06)', color: 'var(--text-mid)' }}>
+                                {typeLabel}
+                              </span>
+                            </div>
+                            {pay.paid_date && (
+                              <div className="text-xs" style={{ color: 'var(--text-light)' }}>
+                                จ่าย {new Date(pay.paid_date).toLocaleDateString('th-TH')}
+                                {pay.method && ` · ${pay.method === 'transfer' ? 'โอน' : pay.method === 'cash' ? 'เงินสด' : 'อื่นๆ'}`}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="font-serif font-semibold text-sm" style={{ color: 'var(--terracotta)' }}>
+                              ฿{pay.amount.toLocaleString()}
+                            </div>
+                            {status === 'partial' && (
+                              <div className="text-[10px]" style={{ color: '#854F0B' }}>
+                                จ่ายแล้ว ฿{(pay.paid_amount ?? 0).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                          <button type="button" onClick={() => setPaymentModal(pay)}
+                            className="text-xs px-2 py-1 rounded-lg border shrink-0"
+                            style={{ borderColor: 'rgba(196,98,45,0.2)', color: status === 'paid' ? 'var(--text-light)' : 'var(--terracotta)' }}>
+                            {status === 'paid' ? 'แก้ไข' : 'บันทึก'}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* Location */}
             <section className="rounded-2xl border p-6 space-y-4"
@@ -536,6 +667,30 @@ export default function PropertyForm({ mode, propertyId }: Props) {
               </button>
             </div>
           </form>
+        )}
+
+        {rentalModalMode && savedProperty && (
+          <RentalModal
+            mode={rentalModalMode}
+            property={savedProperty}
+            rental={activeRental || undefined}
+            onClose={() => setRentalModalMode(null)}
+            onSaved={async () => {
+              setRentalModalMode(null)
+              await reloadActiveRental()
+            }}
+          />
+        )}
+
+        {paymentModal && activeRental && (
+          <PaymentMarkPaidModal
+            payment={paymentModal}
+            onClose={() => setPaymentModal(null)}
+            onSaved={async () => {
+              setPaymentModal(null)
+              await reloadPayments(activeRental.id)
+            }}
+          />
         )}
       </main>
     </div>
