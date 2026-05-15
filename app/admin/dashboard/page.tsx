@@ -1,32 +1,78 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { Plus, TrendingUp, AlertTriangle, Clock } from 'lucide-react'
-import { getProperties, getInquiries, getRentalStatus, getPayments, getPaymentStatus } from '@/lib/supabase'
+import { Plus, TrendingUp, AlertTriangle, Clock, BarChart3 } from 'lucide-react'
+import { getProperties, getInquiries, getRentalStatus, getPayments, getPaymentStatus, expireOverdueRentals } from '@/lib/supabase'
 import type { Property, Inquiry, Payment } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+
+type RangeMonths = 6 | 12 | 24
+
+function buildCommissionSeries(payments: Payment[], months: RangeMonths) {
+  // Build month buckets ending with current month (Asia/Bangkok local)
+  const now = new Date()
+  const buckets: { key: string; label: string; total: number }[] = []
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const label = d.toLocaleDateString('th-TH', { month: 'short', year: '2-digit' })
+    buckets.push({ key, label, total: 0 })
+  }
+  const map = new Map(buckets.map(b => [b.key, b]))
+  for (const p of payments) {
+    if (p.type !== 'commission') continue
+    const amount = p.paid_amount ?? 0
+    if (amount <= 0) continue
+    const dateStr = p.paid_date ?? p.due_date
+    if (!dateStr) continue
+    const d = new Date(dateStr)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const b = map.get(key)
+    if (b) b.total += amount
+  }
+  return buckets
+}
 
 export default function AdminDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
+  const [range, setRange] = useState<RangeMonths>(12)
 
   useEffect(() => {
-    Promise.all([getProperties(), getInquiries(), getPayments()]).then(([p, i, pay]) => {
-      setProperties(p)
-      setInquiries(i)
-      setPayments(pay)
-      setLoading(false)
-    })
+    // Run rental auto-expire once per admin session before pulling stats so
+    // dashboard counts reflect today's state.
+    expireOverdueRentals()
+      .catch(e => console.warn('expireOverdueRentals failed:', e))
+      .then(() => Promise.all([getProperties(), getInquiries(), getPayments()]))
+      .then(([p, i, pay]) => {
+        setProperties(p)
+        setInquiries(i)
+        setPayments(pay)
+        setLoading(false)
+      })
   }, [])
 
   const available = properties.filter(p => p.status === 'available').length
   const reserved = properties.filter(p => p.status === 'reserved').length
   const newInquiries = inquiries.filter(i => i.status === 'new').length
-  const totalRevenue = properties
-    .filter(p => p.status === 'rented' && p.active_rental?.rented_by_us)
-    .reduce((sum, p) => sum + (p.active_rental?.monthly_rent ?? p.price_monthly), 0)
+
+  // Revenue = paid commission this month
+  const now = new Date()
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const totalRevenue = payments.reduce((sum, p) => {
+    if (p.type !== 'commission') return sum
+    const amt = p.paid_amount ?? 0
+    if (amt <= 0) return sum
+    const d = new Date(p.paid_date ?? p.due_date ?? 0)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return key === thisMonthKey ? sum + amt : sum
+  }, 0)
+
+  const series = useMemo(() => buildCommissionSeries(payments, range), [payments, range])
+  const maxVal = Math.max(1, ...series.map(s => s.total))
+  const seriesTotal = series.reduce((s, b) => s + b.total, 0)
 
   const paymentsWithStatus = payments.map(p => ({ p, status: getPaymentStatus(p) }))
   const overduePayments = paymentsWithStatus.filter(x => x.status === 'overdue' || x.status === 'partial')
@@ -49,7 +95,7 @@ export default function AdminDashboard() {
       <AdminSidebar />
 
       {/* Main */}
-      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-24 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ภาพรวม</h1>
@@ -79,7 +125,7 @@ export default function AdminDashboard() {
             { label: 'ทรัพย์ว่าง', val: available, icon: '🏠', color: '#0F6E56', bg: 'rgba(135,168,120,0.1)' },
             { label: 'จองแล้ว', val: reserved, icon: '📋', color: '#854F0B', bg: 'rgba(239,159,39,0.1)' },
             { label: 'ติดต่อใหม่', val: newInquiries, icon: '🔔', color: 'var(--terracotta)', bg: 'rgba(196,98,45,0.1)' },
-            { label: 'รายได้เช่า/เดือน', val: `฿${totalRevenue.toLocaleString()}`, icon: '💰', color: '#185FA5', bg: 'rgba(55,138,221,0.1)' },
+            { label: 'รายได้ค่านายหน้าเดือนนี้', val: `฿${totalRevenue.toLocaleString()}`, icon: '💰', color: '#185FA5', bg: 'rgba(55,138,221,0.1)' },
             {
               label: overdueCount > 0 ? `ค้างชำระ ${overdueCount} รายการ` : 'ค้างชำระ',
               val: `฿${overdueTotal.toLocaleString()}`,
@@ -98,6 +144,70 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+
+        {/* Commission revenue chart */}
+        {!loading && (
+          <div className="rounded-2xl border p-6 mb-6" style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <BarChart3 size={18} style={{ color: 'var(--terracotta)' }} />
+                <h2 className="font-serif text-lg font-semibold" style={{ color: 'var(--brown)' }}>รายได้ค่านายหน้า</h2>
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(196,98,45,0.08)', color: 'var(--terracotta)' }}>
+                  รวม ฿{seriesTotal.toLocaleString()}
+                </span>
+              </div>
+              <div className="flex gap-1.5">
+                {([6, 12, 24] as RangeMonths[]).map(r => (
+                  <button key={r} onClick={() => setRange(r)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+                    style={{
+                      background: range === r ? 'var(--terracotta)' : 'white',
+                      borderColor: range === r ? 'var(--terracotta)' : 'rgba(196,98,45,0.15)',
+                      color: range === r ? 'white' : 'var(--text-mid)',
+                    }}>
+                    {r} เดือน
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Bar chart */}
+            <div className="overflow-x-auto pb-2">
+              <div className="flex items-end gap-1.5" style={{ minWidth: `${series.length * 36}px`, height: 200 }}>
+                {series.map(b => {
+                  const heightPct = (b.total / maxVal) * 100
+                  const isCurrent = b.key === thisMonthKey
+                  return (
+                    <div key={b.key} className="flex-1 flex flex-col items-center gap-1.5 group min-w-[30px]">
+                      <div className="text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap"
+                        style={{ color: 'var(--text-mid)' }}>
+                        ฿{b.total.toLocaleString()}
+                      </div>
+                      <div className="w-full flex items-end" style={{ height: 160 }}>
+                        <div className="w-full rounded-t-lg transition-all"
+                          style={{
+                            height: `${Math.max(heightPct, b.total > 0 ? 4 : 0)}%`,
+                            background: isCurrent ? 'var(--terracotta)' : 'rgba(196,98,45,0.55)',
+                            minHeight: b.total > 0 ? 4 : 0,
+                          }}
+                          title={`${b.label}: ฿${b.total.toLocaleString()}`} />
+                      </div>
+                      <div className="text-[10px] text-center whitespace-nowrap"
+                        style={{ color: isCurrent ? 'var(--terracotta)' : 'var(--text-light)', fontWeight: isCurrent ? 600 : 400 }}>
+                        {b.label}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            {seriesTotal === 0 && (
+              <div className="text-center py-4 text-sm" style={{ color: 'var(--text-light)' }}>
+                ยังไม่มีรายได้ค่านายหน้าในช่วงนี้
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Rental expiry alerts */}
         {!loading && (expired.length > 0 || expiring.length > 0) && (

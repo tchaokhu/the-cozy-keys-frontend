@@ -4,6 +4,7 @@ import { Phone, MessageCircle } from 'lucide-react'
 import { getInquiries, getProperties, updateInquiryStatus } from '@/lib/supabase'
 import type { Property, Inquiry } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
+import { LINE_OA_URL } from '@/lib/brand'
 
 const STATUS_STYLE = {
   new: { label: 'ใหม่', color: 'var(--terracotta)', bg: 'rgba(196,98,45,0.1)' },
@@ -42,7 +43,7 @@ export default function AdminInquiries() {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-24 overflow-auto">
         <div className="mb-8">
           <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>การติดต่อ</h1>
           <p className="text-sm font-light" style={{ color: 'var(--text-light)' }}>
@@ -154,7 +155,7 @@ export default function AdminInquiries() {
                       style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}>
                       <Phone size={13} /> โทร {inq.phone}
                     </a>
-                    <a href="@thecozykeys"
+                    <a href={LINE_OA_URL} target="_blank" rel="noreferrer"
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium border transition-all"
                       style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}>
                       <MessageCircle size={13} /> LINE

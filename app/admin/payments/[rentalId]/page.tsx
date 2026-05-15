@@ -155,7 +155,7 @@ export default function PaymentDetailPage() {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pb-12 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pb-12 pt-20 md:pt-24 overflow-auto">
         {/* Back link */}
         <Link href="/admin/payments"
           className="inline-flex items-center gap-1 text-sm mb-4 transition-colors"

@@ -52,6 +52,7 @@ export interface Property {
   building_id?: string
   buildingInfo?: Building
   active_rental?: Rental
+  postings?: Array<{ platform_id: string; platform_name: string; posted: boolean; post_url: string | null }>
   created_at: string
   updated_at: string
 }
@@ -118,7 +119,7 @@ export interface Payment {
 
 export interface Inquiry {
   id: string
-  property_id: string
+  property_id?: string
   property?: Property
   name: string
   phone: string
@@ -129,18 +130,48 @@ export interface Inquiry {
   created_at: string
 }
 
-export interface ScheduledPost {
+export type PostSectionKey =
+  | 'header'
+  | 'price'
+  | 'details'
+  | 'facilities'
+  | 'nearby'
+  | 'description'
+  | 'cta'
+  | 'hashtags'
+  | 'divider'
+  | 'custom_text'
+
+export interface PostTemplateSection {
+  key: PostSectionKey
+  enabled: boolean
+  label_th: string
+  label_en: string
+  options?: {
+    emoji?: string
+    max_items?: number
+    text_th?: string
+    text_en?: string
+  }
+}
+
+export interface PostTemplate {
   id: string
-  property_id: string
-  property?: Property
-  post_content_th: string
-  post_content_en: string
-  scheduled_date: string
-  scheduled_time: string
-  images: string[]
-  status: 'planned' | 'scheduled' | 'published' | 'failed' | 'fb_scheduled' | 'fb_published'
-  fb_post_id?: string
+  name: string
+  is_default: boolean
+  sections: PostTemplateSection[]
+  notes?: string
   created_at: string
+  updated_at: string
+}
+
+export interface StyleParams {
+  tone: 'modern' | 'warm' | 'professional' | 'fun'
+  length: 'short' | 'medium' | 'long'
+  emojiDensity: 0 | 1 | 2 | 3
+  hashtagCount: number
+  audience: 'general' | 'expat' | 'family'
+  ctaTarget: 'line' | 'phone' | 'both'
 }
 
 export interface FilterState {
@@ -149,4 +180,52 @@ export interface FilterState {
   min_price: number
   max_price: number
   bedrooms: string
+}
+
+export type DocumentTemplateCategory = 'rental_contract' | 'agency_contract' | 'receipt' | 'other'
+
+export interface DocumentTemplate {
+  id: string
+  category: DocumentTemplateCategory
+  title: string
+  description: string | null
+  pdf_storage_path: string | null
+  pdf_file_name: string | null
+  pdf_size_bytes: number | null
+  docx_storage_path: string | null
+  docx_file_name: string | null
+  docx_size_bytes: number | null
+  uploaded_by: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface RentalDocument {
+  id: string
+  rental_id: string
+  storage_path: string
+  file_name: string
+  mime_type: string
+  size_bytes: number
+  uploaded_by: string | null
+  created_at: string
+}
+
+export interface PostingPlatform {
+  id: string
+  name: string
+  sort_order: number
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface PropertyPosting {
+  id: string
+  property_id: string
+  platform_id: string
+  posted: boolean
+  post_url: string | null
+  created_at: string
+  updated_at: string
 }

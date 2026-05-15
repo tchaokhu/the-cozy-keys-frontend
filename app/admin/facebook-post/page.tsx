@@ -1,9 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Search, Copy, Check, RefreshCw, Sparkles, Share2, X, Send, Clock, Loader2, ExternalLink, ImageIcon, MessageSquare, Home, Upload, FileText } from 'lucide-react'
-import { getProperties, createScheduledPost, uploadPropertyImage } from '@/lib/supabase'
-import { fetchPropertyInfo, checkFacebookConfig, publishToFacebook, translateFacilitiesAndNearby } from './actions'
-import type { Property } from '@/types'
+import { Search, Copy, Check, RefreshCw, Sparkles, Share2, X, Loader2, MessageSquare, Home, FileText } from 'lucide-react'
+import { getProperties, getPostTemplates } from '@/lib/supabase'
+import { fetchPropertyInfo, translateFacilitiesAndNearby } from './actions'
+import type { Property, PostTemplate as DbPostTemplate, StyleParams } from '@/types'
+import { renderTemplate, DEFAULT_STYLE, type PostExtras, type PriceTier } from '@/lib/postTemplateRenderer'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -12,7 +13,7 @@ const SEP = '─────────────────────'
 
 // ─── General Post Templates ──────────────────────────────────────────────────
 
-interface PostTemplate {
+interface GeneralPostTemplate {
   id: string
   label: string
   emoji: string
@@ -20,7 +21,7 @@ interface PostTemplate {
   contentEN: string
 }
 
-const GENERAL_TEMPLATES: PostTemplate[] = [
+const GENERAL_TEMPLATES: GeneralPostTemplate[] = [
   {
     id: 'tip-checklist',
     label: 'เช็คลิสต์ก่อนเช่า',
@@ -251,167 +252,27 @@ const STATUS_STYLE = {
   rented:    { label: 'เช่าแล้ว', color: '#A32D2D', bg: 'rgba(226,75,74,0.15)' },
 }
 
-// ─── Post generator ───────────────────────────────────────────────────────────
+// ─── Style knob selector ─────────────────────────────────────────────────────
 
-interface PriceTier {
+function StyleSelect({ label, value, onChange, opts }: {
   label: string
-  labelEN: string
-  price: string
-}
-
-interface PostExtras {
-  taglineTH: string
-  taglineEN: string
-  furnished: 'fully' | 'semi' | 'unfurnished'
-  nearbyMain: string
-  priceTiers: PriceTier[]
-  deposit: string
-  facilityLines: string
-  nearbyLines: string
-}
-
-function buildHashtagsTH(p: Property) {
-  const type = TYPE_LABEL_EN[p.property_type] || ''
-  const district = p.district.replace(/\s/g, '')
-  return [
-    `#ให้เช่า${type}`,
-    `#${district}`,
-    `#${TYPE_LABEL_TH[p.property_type]}`,
-    '#ชลบุรี',
-    '#TheCozyKeys',
-    '#CondoForRent',
-    '#ศรีราชา',
-    '#แหลมฉบัง',
-    '#EasternSeaboard',
-  ].join(' ')
-}
-
-function buildHashtagsEN(p: Property) {
-  const type = TYPE_LABEL_EN[p.property_type] || ''
-  const district = p.district.replace(/\s/g, '')
-  return [
-    `#${type}ForRent`,
-    `#${district}`,
-    `#${type}`,
-    '#Chonburi',
-    '#TheCozyKeys',
-    '#Sriracha',
-    '#LaemChabang',
-    '#EasternSeaboard',
-    '#ExpatThailand',
-    '#WorkFromAnywhere',
-  ].join(' ')
-}
-
-function generateTH(p: Property, extras: PostExtras): string {
-  const lines: string[] = []
-  const typeTH = TYPE_LABEL_TH[p.property_type] || p.property_type
-  const typeEmoji = TYPE_EMOJI[p.property_type] || '🏠'
-
-  lines.push('🔑 The Cozy Keys (English versionis Below)')
-  lines.push(`✨ ให้เช่า | ${p.title}`)
-  lines.push(SEP)
-
-  if (extras.taglineTH.trim()) lines.push(extras.taglineTH.trim())
-
-  const furnishedTH = FURNISHED_TH[extras.furnished]
-  const nearbyPart = extras.nearbyMain.trim() ? ` ใกล้ ${extras.nearbyMain.trim()}` : ''
-  const floorTH = p.floor ? ` | ชั้น ${p.floor}` : ''
-  lines.push(`${typeEmoji} ${typeTH} · ${p.area_sqm} ตร.ม. | ${p.bedrooms} นอน | ${p.bathrooms} น้ำ${floorTH} | ${furnishedTH}`)
-  lines.push(`📍 ${p.district} ${p.province}${nearbyPart}`)
-  lines.push(SEP)
-
-  const facilities = extras.facilityLines.trim().split('\n').filter(Boolean)
-  if (facilities.length > 0) {
-    lines.push('🏊 Facilities ครบครัน')
-    facilities.forEach(f => lines.push(`› ${f}`))
-    lines.push(SEP)
-  }
-
-  const nearby = extras.nearbyLines.trim().split('\n').filter(Boolean)
-  if (nearby.length > 0) {
-    lines.push('📍 สถานที่ใกล้เคียง')
-    nearby.forEach(n => lines.push(`› ${n}`))
-    lines.push(SEP)
-  }
-
-  // Pricing
-  const p1 = p.price_monthly.toLocaleString()
-  const tiers = extras.priceTiers.filter(t => t.label.trim() && t.price.trim())
-  if (tiers.length > 0) {
-    lines.push('💰 ราคาพิเศษตามระยะสัญญา')
-    lines.push(`📋 1 เดือน — ${p1} บาท`)
-    tiers.forEach(t => lines.push(`📋 ${t.label} — ${Number(t.price).toLocaleString()} บาท/เดือน`))
-    if (extras.deposit.trim()) lines.push(`ประกัน ${extras.deposit}`)
-  } else {
-    lines.push(`💰 ราคาเช่า ${p1} บาท/เดือน`)
-    if (extras.deposit.trim()) lines.push(`ประกัน ${extras.deposit}`)
-  }
-  lines.push(SEP)
-
-  lines.push('☎️ 087 670 6436 (K.Nut)')
-  lines.push('☎️ 098 091 5461 (K.Dear)')
-  lines.push('💬 LINE: @thecozykeys')
-  lines.push(SEP)
-
-  lines.push(buildHashtagsTH(p))
-
-  return lines.join('\n')
-}
-
-function generateEN(p: Property, extras: PostExtras, translated?: { facilitiesEN: string[]; nearbyEN: string[] }): string {
-  const lines: string[] = []
-  const typeEN = TYPE_LABEL_EN[p.property_type] || p.property_type
-  const typeEmoji = TYPE_EMOJI[p.property_type] || '🏠'
-
-  lines.push('🔑 The Cozy Keys')
-  lines.push(`✨ For Rent | ${p.title_en || p.title}`)
-  lines.push(SEP)
-
-  if (extras.taglineEN.trim()) lines.push(extras.taglineEN.trim())
-
-  const furnishedEN = FURNISHED_EN[extras.furnished]
-  const nearbyPart = extras.nearbyMain.trim() ? ` · Near ${extras.nearbyMain.trim()}` : ''
-  const floorEN = p.floor ? ` | Floor ${p.floor}` : ''
-  lines.push(`${typeEmoji} ${typeEN} · ${p.area_sqm} sqm. | ${p.bedrooms} Bed | ${p.bathrooms} Bath${floorEN} | ${furnishedEN}`)
-  lines.push(`📍 ${p.district}, ${p.province}${nearbyPart}`)
-  lines.push(SEP)
-
-  const facilities = translated?.facilitiesEN ?? extras.facilityLines.trim().split('\n').filter(Boolean)
-  if (facilities.length > 0) {
-    lines.push('🏊 World-Class Facilities')
-    facilities.forEach(f => lines.push(`› ${f}`))
-    lines.push(SEP)
-  }
-
-  const nearby = translated?.nearbyEN ?? extras.nearbyLines.trim().split('\n').filter(Boolean)
-  if (nearby.length > 0) {
-    lines.push('📍 Nearby Locations')
-    nearby.forEach(n => lines.push(`› ${n}`))
-    lines.push(SEP)
-  }
-
-  const p1 = p.price_monthly.toLocaleString()
-  const tiers = extras.priceTiers.filter(t => t.labelEN.trim() && t.price.trim())
-  if (tiers.length > 0) {
-    lines.push('💰 Flexible pricing by contract')
-    lines.push(`📋 1 month — ${p1} THB`)
-    tiers.forEach(t => lines.push(`📋 ${t.labelEN} — ${Number(t.price).toLocaleString()} THB/month`))
-    if (extras.deposit.trim()) lines.push(`Deposit: ${extras.deposit}`)
-  } else {
-    lines.push(`💰 Rental price ${p1} THB/month`)
-    if (extras.deposit.trim()) lines.push(`Deposit: ${extras.deposit}`)
-  }
-  lines.push(SEP)
-
-  lines.push('☎️ 087 670 6436 (K.Nut)')
-  lines.push('☎️ 098 091 5461 (K.Dear)')
-  lines.push('💬 LINE: @thecozykeys')
-  lines.push(SEP)
-
-  lines.push(buildHashtagsEN(p))
-
-  return lines.join('\n')
+  value: string
+  onChange: (v: string) => void
+  opts: [string, string][]
+}) {
+  return (
+    <label className="block">
+      <span className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>{label}</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
+        style={{ background: 'var(--cream)', borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }}
+      >
+        {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+      </select>
+    </label>
+  )
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -448,23 +309,33 @@ export default function FacebookPostPage() {
   const [generalPostEN, setGeneralPostEN] = useState('')
   const [generalActiveTab, setGeneralActiveTab] = useState<'th' | 'en'>('th')
   const [generalCopied, setGeneralCopied] = useState(false)
-  const [generalImages, setGeneralImages] = useState<string[]>([])
-  const [generalUploading, setGeneralUploading] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState<string>('')
 
-  // Facebook publish states
-  const [fbConfigured, setFbConfigured] = useState(false)
-  const [selectedImages, setSelectedImages] = useState<string[]>([])
-  const [fbPublishing, setFbPublishing] = useState(false)
-  const [fbResult, setFbResult] = useState<{ success: boolean; postId?: string; error?: string; scheduled?: boolean } | null>(null)
-  const [publishMode, setPublishMode] = useState<'now' | 'schedule'>('now')
-  const [scheduleDate, setScheduleDate] = useState('')
-  const [scheduleTime, setScheduleTime] = useState('')
+  // DB-managed post templates + style knobs (property mode)
+  const [dbTemplates, setDbTemplates] = useState<DbPostTemplate[]>([])
+  const [selectedDbTemplateId, setSelectedDbTemplateId] = useState<string>('')
+  const [style, setStyle] = useState<StyleParams>(DEFAULT_STYLE)
+  const [showStylePanel, setShowStylePanel] = useState(false)
 
   useEffect(() => {
     getProperties().then(data => { setProperties(data); setLoading(false) })
-    checkFacebookConfig().then(r => setFbConfigured(r.configured))
+    // Load post templates from DB. Stale localStorage IDs fall back to default.
+    getPostTemplates().then(rows => {
+      setDbTemplates(rows)
+      if (rows.length === 0) return
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('fbpost.templateId') : null
+      const fallback = rows.find(t => t.is_default)?.id ?? rows[0].id
+      const initial = stored && rows.some(t => t.id === stored) ? stored : fallback
+      setSelectedDbTemplateId(initial)
+    }).catch(e => console.warn('getPostTemplates failed:', e))
   }, [])
+
+  // Persist template choice across sessions.
+  useEffect(() => {
+    if (selectedDbTemplateId && typeof window !== 'undefined') {
+      localStorage.setItem('fbpost.templateId', selectedDbTemplateId)
+    }
+  }, [selectedDbTemplateId])
 
   const fetchGeminiInfo = async (property: Property) => {
     setAiLoading(true)
@@ -494,8 +365,6 @@ export default function FacebookPostPage() {
     })
     setPostTH('')
     setPostEN('')
-    setSelectedImages(selected.images?.slice(0, 10) || [])
-    setFbResult(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected])
 
@@ -506,42 +375,34 @@ export default function FacebookPostPage() {
 
   const handleGenerate = async () => {
     if (!selected) return
+    const tpl = dbTemplates.find(t => t.id === selectedDbTemplateId)
+      ?? dbTemplates.find(t => t.is_default)
+      ?? dbTemplates[0]
+    if (!tpl) {
+      setAiError('ยังไม่มีเทมเพลตในระบบ — กรุณาเพิ่มที่ /admin/post-templates')
+      return
+    }
     setGenerating(true)
-    setPostTH(generateTH(selected, extras))
+    setPostTH(renderTemplate(tpl, selected, extras, style, 'th'))
 
     const facilityLines = extras.facilityLines.trim().split('\n').filter(Boolean)
     const nearbyLines = extras.nearbyLines.trim().split('\n').filter(Boolean)
 
     try {
       const translated = await translateFacilitiesAndNearby(facilityLines, nearbyLines)
-      setPostEN(generateEN(selected, extras, translated))
+      setPostEN(renderTemplate(tpl, selected, extras, style, 'en', translated))
     } catch {
-      setPostEN(generateEN(selected, extras))
+      setPostEN(renderTemplate(tpl, selected, extras, style, 'en'))
     } finally {
       setGenerating(false)
     }
   }
 
   // ─── General post handlers ──────────────────────────────────────────────
-  const handleSelectTemplate = (tpl: PostTemplate) => {
+  const handleSelectTemplate = (tpl: GeneralPostTemplate) => {
     setSelectedTemplate(tpl.id)
     setGeneralPostTH(tpl.contentTH)
     setGeneralPostEN(tpl.contentEN)
-    setFbResult(null)
-  }
-
-  const handleGeneralImageUpload = async (files: FileList) => {
-    setGeneralUploading(true)
-    try {
-      const urls: string[] = []
-      for (const file of Array.from(files).slice(0, 10 - generalImages.length)) {
-        const url = await uploadPropertyImage(file)
-        urls.push(url)
-      }
-      setGeneralImages(prev => [...prev, ...urls].slice(0, 10))
-    } finally {
-      setGeneralUploading(false)
-    }
   }
 
   const handleGeneralCopy = () => {
@@ -558,83 +419,6 @@ export default function FacebookPostPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
-  }
-
-  // ─── Shared publish handler ────────────────────────────────────────────
-  const handlePublishGeneral = async () => {
-    if (!generalPostTH && !generalPostEN) return
-    const scheduleInfo = publishMode === 'schedule' ? { date: scheduleDate, time: scheduleTime } : undefined
-    if (scheduleInfo && (!scheduleInfo.date || !scheduleInfo.time)) {
-      setFbResult({ success: false, error: 'กรุณาเลือกวันที่และเวลา' })
-      return
-    }
-    const parts = [generalPostTH, generalPostEN].filter(Boolean)
-    const text = parts.join(`\n\n${SEP}\n\n`)
-    const action = publishMode === 'schedule'
-      ? `ตั้งเวลาโพสต์ TH/EN พร้อม ${generalImages.length} รูป ไปยัง Facebook Page?`
-      : `โพสต์ TH/EN พร้อม ${generalImages.length} รูป ไปยัง Facebook Page?`
-    if (!window.confirm(action)) return
-
-    setFbPublishing(true)
-    setFbResult(null)
-    try {
-      const result = await publishToFacebook(text, generalImages, scheduleInfo)
-      setFbResult({ success: true, postId: result.postId, scheduled: result.scheduled })
-    } catch (e) {
-      setFbResult({ success: false, error: e instanceof Error ? e.message : 'เกิดข้อผิดพลาด' })
-    } finally {
-      setFbPublishing(false)
-    }
-  }
-
-  const handlePublish = async () => {
-    if (!postTH && !postEN) return
-    const scheduleInfo = publishMode === 'schedule' ? { date: scheduleDate, time: scheduleTime } : undefined
-    if (scheduleInfo && (!scheduleInfo.date || !scheduleInfo.time)) {
-      setFbResult({ success: false, error: 'กรุณาเลือกวันที่และเวลา' })
-      return
-    }
-    const parts = [postTH, postEN].filter(Boolean)
-    const text = parts.join(`\n\n${SEP}\n\n`)
-    const action = publishMode === 'schedule'
-      ? `ตั้งเวลาโพสต์ TH/EN พร้อม ${selectedImages.length} รูป ไปยัง Facebook Page?`
-      : `โพสต์ TH/EN พร้อม ${selectedImages.length} รูป ไปยัง Facebook Page?`
-    if (!window.confirm(action)) return
-
-    setFbPublishing(true)
-    setFbResult(null)
-    try {
-      const result = await publishToFacebook(text, selectedImages, scheduleInfo)
-      setFbResult({ success: true, postId: result.postId, scheduled: result.scheduled })
-
-      // Save to scheduled_posts for calendar tracking
-      if (selected) {
-        try {
-          await createScheduledPost({
-            property_id: selected.id,
-            post_content_th: postTH,
-            post_content_en: postEN,
-            scheduled_date: scheduleInfo?.date || new Date().toISOString().split('T')[0],
-            scheduled_time: scheduleInfo?.time || new Date().toTimeString().slice(0, 5),
-            images: selectedImages,
-            status: result.scheduled ? 'scheduled' : 'published',
-            fb_post_id: result.postId,
-          })
-        } catch (dbErr) {
-          console.error('Failed to save to calendar:', dbErr)
-        }
-      }
-    } catch (e) {
-      setFbResult({ success: false, error: e instanceof Error ? e.message : 'เกิดข้อผิดพลาด' })
-    } finally {
-      setFbPublishing(false)
-    }
-  }
-
-  const toggleImage = (url: string) => {
-    setSelectedImages(prev =>
-      prev.includes(url) ? prev.filter(u => u !== url) : prev.length < 10 ? [...prev, url] : prev
-    )
   }
 
   const filtered = search
@@ -797,7 +581,7 @@ export default function FacebookPostPage() {
               { mode: 'general' as const, icon: MessageSquare, label: 'โพสต์ทั่วไป' },
             ]).map(({ mode, icon: Icon, label }) => (
               <button key={mode} type="button"
-                onClick={() => { setPostMode(mode); setFbResult(null) }}
+                onClick={() => setPostMode(mode)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium border transition-all"
                 style={{
                   background: postMode === mode ? 'var(--terracotta)' : 'white',
@@ -836,53 +620,6 @@ export default function FacebookPostPage() {
                     </button>
                   ))}
                 </div>
-              </div>
-
-              {/* Image upload */}
-              <div className="rounded-2xl border p-6 mb-6"
-                style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)' }}>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-serif font-semibold flex items-center gap-2" style={{ color: 'var(--brown)' }}>
-                    <ImageIcon size={16} style={{ color: 'var(--terracotta)' }} />
-                    รูปภาพ (ไม่บังคับ)
-                  </h3>
-                  <span className="text-xs" style={{ color: 'var(--text-light)' }}>
-                    {generalImages.length}/10 รูป
-                  </span>
-                </div>
-
-                {generalImages.length > 0 && (
-                  <div className="grid grid-cols-4 md:grid-cols-5 gap-2 mb-3">
-                    {generalImages.map((img, i) => (
-                      <div key={i} className="relative aspect-square rounded-xl overflow-hidden border"
-                        style={{ borderColor: 'rgba(196,98,45,0.15)' }}>
-                        <img src={img} alt="" className="w-full h-full object-cover" />
-                        <button type="button"
-                          onClick={() => setGeneralImages(prev => prev.filter((_, idx) => idx !== i))}
-                          className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center"
-                          style={{ background: 'rgba(0,0,0,0.6)' }}>
-                          <X size={10} color="white" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {generalImages.length < 10 && (
-                  <label className="flex items-center justify-center gap-2 py-4 rounded-xl border-2 border-dashed cursor-pointer transition-all"
-                    style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-light)' }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--terracotta)')}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(196,98,45,0.2)')}>
-                    {generalUploading ? (
-                      <><Loader2 size={16} className="animate-spin" /> กำลังอัพโหลด...</>
-                    ) : (
-                      <><Upload size={16} /> เพิ่มรูปภาพ</>
-                    )}
-                    <input type="file" accept="image/*" multiple className="hidden"
-                      disabled={generalUploading}
-                      onChange={e => e.target.files && handleGeneralImageUpload(e.target.files)} />
-                  </label>
-                )}
               </div>
 
               {/* Post editor */}
@@ -929,85 +666,6 @@ export default function FacebookPostPage() {
                         {generalCopied ? <><Check size={14} /> คัดลอกแล้ว!</> : <><Copy size={14} /> คัดลอก</>}
                       </button>
                     </div>
-
-                    {/* Facebook publish section */}
-                    {fbConfigured && (
-                      <div className="border-t pt-4" style={{ borderColor: 'rgba(196,98,45,0.08)' }}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <Share2 size={14} style={{ color: 'var(--terracotta)' }} />
-                          <span className="text-sm font-medium" style={{ color: 'var(--brown)' }}>โพสต์ไป Facebook Page</span>
-                        </div>
-
-                        <div className="flex gap-2 mb-3">
-                          {(['now', 'schedule'] as const).map(mode => (
-                            <button key={mode} type="button" onClick={() => setPublishMode(mode)}
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-all"
-                              style={{
-                                background: publishMode === mode ? 'var(--terracotta)' : 'white',
-                                borderColor: publishMode === mode ? 'var(--terracotta)' : 'rgba(196,98,45,0.15)',
-                                color: publishMode === mode ? 'white' : 'var(--text-mid)',
-                              }}>
-                              {mode === 'now' ? <><Send size={12} /> โพสต์เลย</> : <><Clock size={12} /> ตั้งเวลา</>}
-                            </button>
-                          ))}
-                        </div>
-
-                        {publishMode === 'schedule' && (
-                          <div className="flex gap-2 mb-3">
-                            <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
-                              className="flex-1 px-3 py-2 rounded-xl text-sm border outline-none"
-                              style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }}
-                              min={new Date().toISOString().split('T')[0]} />
-                            <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)}
-                              className="w-32 px-3 py-2 rounded-xl text-sm border outline-none"
-                              style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
-                          </div>
-                        )}
-
-                        <button type="button" onClick={handlePublishGeneral}
-                          disabled={fbPublishing || (!generalPostTH && !generalPostEN)}
-                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50"
-                          style={{ background: 'var(--terracotta)' }}>
-                          {fbPublishing
-                            ? <><Loader2 size={15} className="animate-spin" /> กำลังโพสต์...</>
-                            : publishMode === 'now'
-                              ? <><Send size={15} /> โพสต์ไป Facebook</>
-                              : <><Clock size={15} /> ตั้งเวลาโพสต์</>
-                          }
-                        </button>
-
-                        {fbResult && (
-                          <div className="mt-3 px-4 py-3 rounded-xl text-sm border"
-                            style={fbResult.success
-                              ? { background: 'rgba(15,110,86,0.06)', borderColor: 'rgba(15,110,86,0.2)', color: '#0F6E56' }
-                              : { background: 'rgba(220,38,38,0.06)', borderColor: 'rgba(220,38,38,0.2)', color: '#dc2626' }
-                            }>
-                            {fbResult.success ? (
-                              <div>
-                                {fbResult.scheduled
-                                  ? <span>ตั้งเวลาโพสต์สำเร็จ! จะโพสต์วันที่ {scheduleDate} เวลา {scheduleTime}</span>
-                                  : <span>โพสต์สำเร็จ!</span>
-                                }
-                                {fbResult.postId && (
-                                  <a href={`https://facebook.com/${fbResult.postId}`} target="_blank" rel="noreferrer"
-                                    className="inline-flex items-center gap-1 ml-2 underline">
-                                    ดูโพสต์ <ExternalLink size={12} />
-                                  </a>
-                                )}
-                              </div>
-                            ) : (
-                              <span>{fbResult.error}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {!fbConfigured && (
-                      <div className="border-t pt-3 text-xs" style={{ borderColor: 'rgba(196,98,45,0.08)', color: 'var(--text-light)' }}>
-                        ต้องการโพสต์ไป Facebook โดยตรง? เพิ่ม FACEBOOK_PAGE_ID และ FACEBOOK_PAGE_ACCESS_TOKEN ใน .env.local
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -1332,42 +990,60 @@ export default function FacebookPostPage() {
                 </div>
               </div>
 
-              {/* Image selector */}
-              {selected.images && selected.images.length > 0 && (
-                <div className="rounded-2xl border p-6 mb-6"
-                  style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)' }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-serif font-semibold flex items-center gap-2" style={{ color: 'var(--brown)' }}>
-                      <ImageIcon size={16} style={{ color: 'var(--terracotta)' }} />
-                      รูปภาพที่จะโพสต์
-                    </h3>
-                    <span className="text-xs" style={{ color: 'var(--text-light)' }}>
-                      {selectedImages.length}/{Math.min(selected.images.length, 10)} รูป
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 md:grid-cols-5 gap-2">
-                    {selected.images.slice(0, 10).map((img, i) => {
-                      const isOn = selectedImages.includes(img)
-                      return (
-                        <button key={i} type="button" onClick={() => toggleImage(img)}
-                          className="relative aspect-square rounded-xl overflow-hidden border-2 transition-all"
-                          style={{
-                            borderColor: isOn ? 'var(--terracotta)' : 'rgba(196,98,45,0.1)',
-                            opacity: isOn ? 1 : 0.5,
-                          }}>
-                          <img src={img} alt="" className="w-full h-full object-cover" />
-                          {isOn && (
-                            <div className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center"
-                              style={{ background: 'var(--terracotta)' }}>
-                              <Check size={12} color="white" />
-                            </div>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
+              {/* Template + Style panel */}
+              <div className="rounded-2xl border p-5 mb-6 space-y-4"
+                style={{ background: 'white', borderColor: 'rgba(196,98,45,0.1)' }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-serif font-semibold flex items-center gap-2" style={{ color: 'var(--brown)' }}>
+                    <FileText size={16} style={{ color: 'var(--terracotta)' }} />
+                    เทมเพลตโพสต์
+                  </h3>
+                  <a href="/admin/post-templates" className="text-xs underline" style={{ color: 'var(--terracotta)' }}>
+                    จัดการเทมเพลต
+                  </a>
                 </div>
-              )}
+
+                <select
+                  value={selectedDbTemplateId}
+                  onChange={e => setSelectedDbTemplateId(e.target.value)}
+                  disabled={dbTemplates.length === 0}
+                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none border"
+                  style={{ background: 'var(--cream)', borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }}
+                >
+                  {dbTemplates.length === 0 && <option value="">ยังไม่มีเทมเพลตในระบบ</option>}
+                  {dbTemplates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.is_default ? ' · ค่าเริ่มต้น' : ''}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setShowStylePanel(s => !s)}
+                  className="text-xs font-medium flex items-center gap-1"
+                  style={{ color: 'var(--terracotta)' }}
+                >
+                  {showStylePanel ? '▼' : '▶'} ปรับสไตล์
+                </button>
+
+                {showStylePanel && (
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t" style={{ borderColor: 'rgba(196,98,45,0.08)' }}>
+                    <StyleSelect label="โทน" value={style.tone} onChange={v => setStyle(s => ({ ...s, tone: v as StyleParams['tone'] }))}
+                      opts={[['modern', 'Modern'], ['warm', 'Warm'], ['professional', 'Professional'], ['fun', 'Fun']]} />
+                    <StyleSelect label="ความยาว" value={style.length} onChange={v => setStyle(s => ({ ...s, length: v as StyleParams['length'] }))}
+                      opts={[['short', 'สั้น'], ['medium', 'กลาง'], ['long', 'ยาว']]} />
+                    <StyleSelect label="อิโมจิ" value={String(style.emojiDensity)} onChange={v => setStyle(s => ({ ...s, emojiDensity: Number(v) as StyleParams['emojiDensity'] }))}
+                      opts={[['0', 'ไม่มี'], ['1', 'น้อย'], ['2', 'ปานกลาง'], ['3', 'เยอะ']]} />
+                    <StyleSelect label="จำนวน #" value={String(style.hashtagCount)} onChange={v => setStyle(s => ({ ...s, hashtagCount: Number(v) }))}
+                      opts={[['3', '3'], ['6', '6'], ['9', '9'], ['99', 'ทั้งหมด']]} />
+                    <StyleSelect label="กลุ่มเป้าหมาย" value={style.audience} onChange={v => setStyle(s => ({ ...s, audience: v as StyleParams['audience'] }))}
+                      opts={[['general', 'ทั่วไป'], ['expat', 'ชาวต่างชาติ'], ['family', 'ครอบครัว']]} />
+                    <StyleSelect label="ช่องทาง CTA" value={style.ctaTarget} onChange={v => setStyle(s => ({ ...s, ctaTarget: v as StyleParams['ctaTarget'] }))}
+                      opts={[['both', 'โทร + LINE'], ['phone', 'โทร'], ['line', 'LINE']]} />
+                  </div>
+                )}
+              </div>
 
               {/* Generate button */}
               <button
@@ -1444,89 +1120,6 @@ export default function FacebookPostPage() {
                         {copied ? <><Check size={14} /> คัดลอกแล้ว!</> : <><Copy size={14} /> คัดลอก</>}
                       </button>
                     </div>
-
-                    {/* Facebook publish section */}
-                    {fbConfigured && (
-                      <div className="border-t pt-4" style={{ borderColor: 'rgba(196,98,45,0.08)' }}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <Share2 size={14} style={{ color: 'var(--terracotta)' }} />
-                          <span className="text-sm font-medium" style={{ color: 'var(--brown)' }}>โพสต์ไป Facebook Page</span>
-                        </div>
-
-                        {/* Mode toggle */}
-                        <div className="flex gap-2 mb-3">
-                          {(['now', 'schedule'] as const).map(mode => (
-                            <button key={mode} type="button" onClick={() => setPublishMode(mode)}
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border transition-all"
-                              style={{
-                                background: publishMode === mode ? 'var(--terracotta)' : 'white',
-                                borderColor: publishMode === mode ? 'var(--terracotta)' : 'rgba(196,98,45,0.15)',
-                                color: publishMode === mode ? 'white' : 'var(--text-mid)',
-                              }}>
-                              {mode === 'now' ? <><Send size={12} /> โพสต์เลย</> : <><Clock size={12} /> ตั้งเวลา</>}
-                            </button>
-                          ))}
-                        </div>
-
-                        {/* Schedule picker */}
-                        {publishMode === 'schedule' && (
-                          <div className="flex gap-2 mb-3">
-                            <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)}
-                              className="flex-1 px-3 py-2 rounded-xl text-sm border outline-none"
-                              style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }}
-                              min={new Date().toISOString().split('T')[0]} />
-                            <input type="time" value={scheduleTime} onChange={e => setScheduleTime(e.target.value)}
-                              className="w-32 px-3 py-2 rounded-xl text-sm border outline-none"
-                              style={{ borderColor: 'rgba(196,98,45,0.15)', color: 'var(--text-dark)' }} />
-                          </div>
-                        )}
-
-                        {/* Publish button */}
-                        <button type="button" onClick={handlePublish} disabled={fbPublishing || (!postTH && !postEN)}
-                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50"
-                          style={{ background: 'var(--terracotta)' }}>
-                          {fbPublishing
-                            ? <><Loader2 size={15} className="animate-spin" /> กำลังโพสต์...</>
-                            : publishMode === 'now'
-                              ? <><Send size={15} /> โพสต์ไป Facebook</>
-                              : <><Clock size={15} /> ตั้งเวลาโพสต์</>
-                          }
-                        </button>
-
-                        {/* Result feedback */}
-                        {fbResult && (
-                          <div className="mt-3 px-4 py-3 rounded-xl text-sm border"
-                            style={fbResult.success
-                              ? { background: 'rgba(15,110,86,0.06)', borderColor: 'rgba(15,110,86,0.2)', color: '#0F6E56' }
-                              : { background: 'rgba(220,38,38,0.06)', borderColor: 'rgba(220,38,38,0.2)', color: '#dc2626' }
-                            }>
-                            {fbResult.success ? (
-                              <div>
-                                {fbResult.scheduled
-                                  ? <span>ตั้งเวลาโพสต์สำเร็จ! จะโพสต์วันที่ {scheduleDate} เวลา {scheduleTime}</span>
-                                  : <span>โพสต์สำเร็จ!</span>
-                                }
-                                {fbResult.postId && (
-                                  <a href={`https://facebook.com/${fbResult.postId}`} target="_blank" rel="noreferrer"
-                                    className="inline-flex items-center gap-1 ml-2 underline">
-                                    ดูโพสต์ <ExternalLink size={12} />
-                                  </a>
-                                )}
-                              </div>
-                            ) : (
-                              <span>{fbResult.error}</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Not configured hint */}
-                    {!fbConfigured && (
-                      <div className="border-t pt-3 text-xs" style={{ borderColor: 'rgba(196,98,45,0.08)', color: 'var(--text-light)' }}>
-                        ต้องการโพสต์ไป Facebook โดยตรง? เพิ่ม FACEBOOK_PAGE_ID และ FACEBOOK_PAGE_ACCESS_TOKEN ใน .env.local
-                      </div>
-                    )}
                   </div>
                 </div>
               )}

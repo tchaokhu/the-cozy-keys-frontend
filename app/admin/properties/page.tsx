@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Plus, Search, Edit2, Eye, Trash2 } from 'lucide-react'
+import { Plus, Search, Edit2, Eye, Trash2, ImageOff, X } from 'lucide-react'
 import { getProperties, deleteProperty, getRentalStatus } from '@/lib/supabase'
 import type { Property } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
@@ -39,6 +39,7 @@ export default function AdminProperties() {
   const [statusFilter, setStatusFilter] = useState('')
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -108,6 +109,35 @@ export default function AdminProperties() {
   useEffect(() => { setCurrentPage(1) }, [search, statusFilter])
 
   const columns: Column<Property>[] = [
+    {
+      key: 'cover',
+      label: 'ภาพ',
+      headerAlign: 'center',
+      cellAlign: 'center',
+      skeleton: <div className="skeleton h-14 w-14 rounded-lg mx-auto" />,
+      render: p => {
+        const cover = p.images?.[0]
+        if (!cover) {
+          return (
+            <div className="h-14 w-14 rounded-lg flex items-center justify-center mx-auto"
+              style={{ background: 'rgba(196,98,45,0.08)', color: 'var(--text-light)' }}>
+              <ImageOff size={18} />
+            </div>
+          )
+        }
+        return (
+          <button
+            onClick={() => setPreviewImage(cover)}
+            className="block h-14 w-14 rounded-lg overflow-hidden mx-auto cursor-zoom-in transition-transform hover:scale-105"
+            style={{ background: 'rgba(196,98,45,0.05)' }}
+            title="คลิกเพื่อดูภาพขนาดเต็ม"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={cover} alt={p.title} className="h-full w-full object-cover" />
+          </button>
+        )
+      },
+    },
     {
       key: 'title',
       label: 'ทรัพย์',
@@ -197,13 +227,46 @@ export default function AdminProperties() {
         )
       },
     },
+    {
+      key: 'postings',
+      label: 'โพสต์แล้ว',
+      headerAlign: 'center',
+      skeleton: <div className="skeleton h-4 w-20 rounded mx-auto" />,
+      render: p => {
+        const posted = p.postings ?? []
+        if (posted.length === 0) return <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>
+        const shown = posted.slice(0, 2)
+        const extra = posted.length - 2
+        return (
+          <div className="flex flex-wrap gap-1 justify-center">
+            {shown.map(pp => (
+              <span
+                key={pp.platform_id}
+                className="px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap"
+                style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}
+              >
+                {pp.platform_name}
+              </span>
+            ))}
+            {extra > 0 && (
+              <span
+                className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                style={{ background: 'rgba(196,98,45,0.06)', color: 'var(--text-mid)' }}
+              >
+                +{extra}
+              </span>
+            )}
+          </div>
+        )
+      },
+    },
   ]
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pb-12 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pb-12 pt-20 md:pt-24 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ทรัพย์ทั้งหมด</h1>
@@ -306,6 +369,31 @@ export default function AdminProperties() {
           />
         )}
       </main>
+
+      {/* Image preview modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 p-2 rounded-full"
+            style={{ background: 'rgba(255,255,255,0.15)', color: 'white' }}
+            aria-label="ปิด"
+          >
+            <X size={20} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewImage}
+            alt="ภาพทรัพย์"
+            className="max-h-full max-w-full object-contain rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
 
       {/* Delete confirm dialog */}
       {deleteId && (

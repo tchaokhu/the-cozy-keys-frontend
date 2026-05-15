@@ -2,14 +2,15 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Plus, Save, User, Building2, Sparkles, MapPin, FileText, AlertCircle, Edit2, Ban, Wallet, CheckCircle, Circle } from 'lucide-react'
-import { createProperty, updateProperty, getPropertyById, getOwners, getBuildings, getActiveRental, getPaymentsByRental, getPaymentStatus } from '@/lib/supabase'
-import type { PropertyType, PropertyStatus, Owner, Building, Property, Rental, Payment, PaymentStatus } from '@/types'
+import { ArrowLeft, Plus, Save, User, Building2, Sparkles, MapPin, FileText, AlertCircle, Edit2, Ban, Wallet, CheckCircle, Circle, KeyRound, Info, Share2 } from 'lucide-react'
+import { createProperty, updateProperty, getPropertyById, getOwners, getBuildings, getActiveRental, getPaymentsByRental, getPaymentStatus, listPostingPlatforms, listPropertyPostings, upsertPropertyPostings } from '@/lib/supabase'
+import type { PropertyType, PropertyStatus, Owner, Building, Property, Rental, Payment, PaymentStatus, PostingPlatform } from '@/types'
 import ImageManager from '@/components/admin/ImageManager'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import SearchableSelect from '@/components/admin/SearchableSelect'
 import RentalModal, { RentalModalMode } from '@/components/admin/RentalModal'
 import PaymentMarkPaidModal from '@/components/admin/PaymentMarkPaidModal'
+import PropertyPreview from '@/components/admin/PropertyPreview'
 
 const DISTRICT_OPTIONS = ['ศรีราชา', 'แหลมฉบัง', 'บ้านบึง']
 const PROVINCE_OPTIONS = ['ชลบุรี']
@@ -40,12 +41,24 @@ export default function PropertyForm({ mode, propertyId }: Props) {
   const [activeRental, setActiveRental] = useState<Rental | null>(null)
   const [savedProperty, setSavedProperty] = useState<Property | null>(null)
   const [rentalModalMode, setRentalModalMode] = useState<RentalModalMode | null>(null)
+  const [rentedChoice, setRentedChoice] = useState<'through_us' | 'not_through_us' | null>(null)
   const [payments, setPayments] = useState<Payment[]>([])
   const [paymentModal, setPaymentModal] = useState<Payment | null>(null)
+
+  const [platforms, setPlatforms] = useState<PostingPlatform[]>([])
+  const [postingState, setPostingState] = useState<Record<string, { posted: boolean; post_url: string }>>({})
+
+  const updatePosting = (platformId: string, patch: Partial<{ posted: boolean; post_url: string }>) => {
+    setPostingState(prev => {
+      const existing = prev[platformId] ?? { posted: false, post_url: '' }
+      return { ...prev, [platformId]: { ...existing, ...patch } }
+    })
+  }
 
   useEffect(() => {
     getOwners().then(setOwners)
     getBuildings().then(setBuildings)
+    listPostingPlatforms({ activeOnly: true }).then(setPlatforms)
   }, [])
 
   const handleBuildingChange = (buildingId: string) => {
@@ -122,6 +135,14 @@ export default function PropertyForm({ mode, propertyId }: Props) {
         try { setPayments(await getPaymentsByRental(r.id)) }
         catch { setPayments([]) }
       }
+      try {
+        const existingPostings = await listPropertyPostings(propertyId)
+        const seed: Record<string, { posted: boolean; post_url: string }> = {}
+        for (const pp of existingPostings) {
+          seed[pp.platform_id] = { posted: pp.posted, post_url: pp.post_url ?? '' }
+        }
+        setPostingState(seed)
+      } catch { /* non-fatal */ }
       setLoading(false)
     })
   }, [isEdit, propertyId])
@@ -201,16 +222,24 @@ export default function PropertyForm({ mode, propertyId }: Props) {
       setError('กรุณากรอกข้อมูลที่จำเป็น: ชื่อทรัพย์, ราคา, พื้นที่, เขต/อำเภอ')
       return
     }
-    if (form.status === 'rented' && !activeRental) {
-      setError('สถานะ "เช่าแล้ว" ต้องมีสัญญาเช่าก่อน — กรุณาสร้างสัญญาในหัวข้อ "สัญญาเช่า"')
-      return
-    }
     setSaving(true)
     try {
+      let savedId: string
       if (isEdit && propertyId) {
         await updateProperty(propertyId, buildPayload())
+        savedId = propertyId
       } else {
-        await createProperty(buildPayload())
+        const created = await createProperty(buildPayload())
+        savedId = created.id
+      }
+      // Save posting platform state — upsert ALL active platforms so unchecks persist
+      const postingItems = platforms.map(p => ({
+        platform_id: p.id,
+        posted: postingState[p.id]?.posted ?? false,
+        post_url: postingState[p.id]?.post_url?.trim() || null,
+      }))
+      if (postingItems.length > 0) {
+        await upsertPropertyPostings(savedId, postingItems)
       }
       router.push('/admin/properties')
     } catch (err) {
@@ -225,7 +254,7 @@ export default function PropertyForm({ mode, propertyId }: Props) {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-24 overflow-auto">
         <div className="flex items-center gap-4 mb-8">
           <Link href="/admin/properties"
             className="flex items-center gap-1.5 text-sm font-medium transition-colors"
@@ -254,7 +283,8 @@ export default function PropertyForm({ mode, propertyId }: Props) {
             </Link>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="max-w-3xl space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
+          <form onSubmit={handleSubmit} className="space-y-6 min-w-0">
 
             {/* Building — first so it can auto-fill other fields */}
             <section className="rounded-2xl border p-6 space-y-4"
@@ -460,22 +490,50 @@ export default function PropertyForm({ mode, propertyId }: Props) {
                       </button>
                     </div>
                   </div>
-                ) : (
+                ) : form.status === 'rented' ? (
                   <div className="space-y-3">
-                    {form.status === 'rented' && (
-                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
-                        style={{ background: 'rgba(239,159,39,0.1)', color: '#854F0B' }}>
-                        <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                        <span>สถานะ &quot;เช่าแล้ว&quot; ต้องมีสัญญาเช่า — กรุณาสร้างสัญญาก่อนบันทึก</span>
+                    <p className="text-xs" style={{ color: 'var(--text-mid)' }}>เลือกประเภทการเช่า</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* เช่าผ่านเรา */}
+                      <button type="button"
+                        onClick={() => { setRentedChoice('through_us'); setRentalModalMode('create') }}
+                        className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-colors hover:border-[var(--terracotta)]"
+                        style={{
+                          borderColor: rentedChoice === 'through_us' ? 'var(--terracotta)' : 'rgba(196,98,45,0.2)',
+                          background: rentedChoice === 'through_us' ? 'rgba(196,98,45,0.05)' : 'white',
+                        }}>
+                        <KeyRound size={18} style={{ color: 'var(--terracotta)' }} />
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: 'var(--brown)' }}>เช่าผ่านเรา</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>บันทึกสัญญา ค่าแรกเข้า และอัปโหลดเอกสาร</p>
+                        </div>
+                      </button>
+
+                      {/* ไม่ได้เช่าผ่านเรา */}
+                      <button type="button"
+                        onClick={() => setRentedChoice(rentedChoice === 'not_through_us' ? null : 'not_through_us')}
+                        className="flex flex-col items-start gap-2 p-4 rounded-xl border-2 text-left transition-colors hover:border-[var(--terracotta)]"
+                        style={{
+                          borderColor: rentedChoice === 'not_through_us' ? 'var(--terracotta)' : 'rgba(196,98,45,0.2)',
+                          background: rentedChoice === 'not_through_us' ? 'rgba(196,98,45,0.05)' : 'white',
+                        }}>
+                        <Info size={18} style={{ color: 'var(--text-mid)' }} />
+                        <div>
+                          <p className="text-sm font-semibold" style={{ color: 'var(--brown)' }}>ไม่ได้เช่าผ่านเรา</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-light)' }}>บันทึกเฉพาะสถานะว่าเช่าแล้ว ไม่ต้องมีสัญญาในระบบ</p>
+                        </div>
+                      </button>
+                    </div>
+
+                    {rentedChoice === 'not_through_us' && (
+                      <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+                        style={{ background: 'rgba(15,110,86,0.08)', color: '#0F6E56' }}>
+                        <CheckCircle size={14} className="shrink-0" />
+                        <span>พร้อมบันทึก — กดปุ่ม &quot;บันทึกการเปลี่ยนแปลง&quot; ด้านล่าง</span>
                       </div>
                     )}
-                    <button type="button" onClick={() => setRentalModalMode('create')}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white"
-                      style={{ background: 'var(--terracotta)' }}>
-                      <Plus size={14} /> สร้างสัญญาเช่า
-                    </button>
                   </div>
-                )}
+                ) : null}
               </section>
             )}
 
@@ -644,6 +702,45 @@ export default function PropertyForm({ mode, propertyId }: Props) {
               </div>
             </section>
 
+            {/* Posting Platforms */}
+            {platforms.length > 0 && (
+              <section className="rounded-2xl border p-6 space-y-4"
+                style={{ background: 'white', borderColor: 'rgba(196,98,45,0.08)' }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Share2 size={16} style={{ color: 'var(--terracotta)' }} />
+                    <h2 className="font-serif font-semibold" style={{ color: 'var(--brown)' }}>ช่องทางโพสต์</h2>
+                  </div>
+                  <Link href="/admin/platforms" target="_blank" className="text-xs" style={{ color: 'var(--terracotta)' }}>
+                    + จัดการช่องทาง
+                  </Link>
+                </div>
+                <div className="space-y-3">
+                  {platforms.map(p => (
+                    <div key={p.id} className="flex items-center gap-3">
+                      <label className="flex items-center gap-2 text-sm shrink-0 min-w-[180px] cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={postingState[p.id]?.posted ?? false}
+                          onChange={e => updatePosting(p.id, { posted: e.target.checked })}
+                          style={{ accentColor: 'var(--terracotta)' }}
+                        />
+                        {p.name}
+                      </label>
+                      <input
+                        type="url"
+                        placeholder="URL โพสต์ (ไม่บังคับ)"
+                        value={postingState[p.id]?.post_url ?? ''}
+                        onChange={e => updatePosting(p.id, { post_url: e.target.value })}
+                        className={FIELD}
+                        style={FIELD_STYLE}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {error && (
               <p className="text-sm px-4 py-3 rounded-xl border"
                 style={{ color: '#A32D2D', background: 'rgba(226,75,74,0.06)', borderColor: 'rgba(226,75,74,0.2)' }}>
@@ -667,6 +764,15 @@ export default function PropertyForm({ mode, propertyId }: Props) {
               </button>
             </div>
           </form>
+
+          {/* Right: live preview, only on xl+ */}
+          <aside className="hidden xl:block sticky top-24 self-start">
+            <PropertyPreview
+              form={form}
+              building={buildings.find(b => b.id === selectedBuildingId) || null}
+            />
+          </aside>
+          </div>
         )}
 
         {rentalModalMode && savedProperty && (
@@ -674,9 +780,11 @@ export default function PropertyForm({ mode, propertyId }: Props) {
             mode={rentalModalMode}
             property={savedProperty}
             rental={activeRental || undefined}
-            onClose={() => setRentalModalMode(null)}
+            forceRentedByUs={rentedChoice === 'through_us'}
+            onClose={() => { setRentalModalMode(null); setRentedChoice(null) }}
             onSaved={async () => {
               setRentalModalMode(null)
+              setRentedChoice(null)
               await reloadActiveRental()
             }}
           />

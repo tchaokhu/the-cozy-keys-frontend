@@ -3,6 +3,14 @@ node_modules/
 .pnp
 .pnp.js
 
+#AI
+.claude/
+.github
+claude.md
+
+# migration
+supabase/
+
 # next.js
 .next/
 out/

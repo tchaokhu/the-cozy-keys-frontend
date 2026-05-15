@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Edit2, Trash2, Phone, Mail, MessageCircle, KeyRound, CreditCard } from 'lucide-react'
 import { getTenants, createTenant, updateTenant, deleteTenant } from '@/lib/supabase'
+import { maskTrailing } from '@/lib/validate'
 import type { Tenant } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import AdminTable, { Column } from '@/components/admin/AdminTable'
@@ -194,8 +195,10 @@ export default function AdminTenantsPage() {
       headerAlign: 'center',
       skeleton: <div className="skeleton h-4 w-28 rounded" />,
       render: t => t.id_card ? (
-        <span className="text-sm inline-flex items-center gap-1.5" style={{ color: 'var(--text-mid)' }}>
-          <CreditCard size={12} /> {t.id_card}
+        <span className="text-sm inline-flex items-center gap-1.5"
+              title="แสดงเฉพาะ 4 ตัวท้าย ดูเลขเต็มได้ในหน้าแก้ไข"
+              style={{ color: 'var(--text-mid)' }}>
+          <CreditCard size={12} /> {maskTrailing(t.id_card, 4)}
         </span>
       ) : <span className="text-sm" style={{ color: 'var(--text-light)' }}>—</span>,
     },
@@ -214,7 +217,7 @@ export default function AdminTenantsPage() {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-24 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ผู้เช่า</h1>

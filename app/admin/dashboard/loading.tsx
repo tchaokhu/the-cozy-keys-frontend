@@ -19,7 +19,7 @@ export default function DashboardLoading() {
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebarSkeleton />
-      <main className="flex-1 p-8 pt-20 md:pt-8 space-y-8">
+      <main className="flex-1 p-8 pt-20 md:pt-24 space-y-8">
         <div className="skeleton h-8 w-40" />
         {/* Stat cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">

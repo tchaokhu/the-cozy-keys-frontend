@@ -1,8 +1,9 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import { KeyRound, Plus, FileText } from 'lucide-react'
-import { createRental, updateRental, endRental, createTenant, getTenants } from '@/lib/supabase'
-import type { Rental, Tenant, Property } from '@/types'
+import { KeyRound, Plus, FileText, Paperclip, Trash2, Download, Eye } from 'lucide-react'
+import { createRental, updateRental, endRental, createTenant, getTenants, listRentalDocuments, uploadRentalDocument, deleteRentalDocument } from '@/lib/supabase'
+import { getRentalDocumentSignedUrl } from '@/app/admin/rentals/actions'
+import type { Rental, Tenant, Property, RentalDocument } from '@/types'
 import SearchableSelect from './SearchableSelect'
 
 const FIELD = 'w-full px-4 py-2.5 rounded-xl text-sm border outline-none transition-colors'
@@ -21,6 +22,7 @@ interface Props {
   mode: RentalModalMode
   property: Property
   rental?: Rental
+  forceRentedByUs?: boolean
   onClose: () => void
   onSaved: (rental: Rental) => void
 }
@@ -40,7 +42,7 @@ interface FormState {
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
-function buildInitialForm(mode: RentalModalMode, property: Property, rental?: Rental): FormState {
+function buildInitialForm(mode: RentalModalMode, property: Property, rental?: Rental, forceRentedByUs?: boolean): FormState {
   if ((mode === 'edit' || mode === 'end') && rental) {
     return {
       tenantId: rental.tenant_id || '',
@@ -64,24 +66,41 @@ function buildInitialForm(mode: RentalModalMode, property: Property, rental?: Re
     monthlyRent: String(property.price_monthly),
     deposit: '',
     commission: '',
-    rentedByUs: false,
+    rentedByUs: forceRentedByUs ?? false,
     note: '',
   }
 }
 
-export default function RentalModal({ mode, property, rental, onClose, onSaved }: Props) {
+function formatBytes(n: number): string {
+  if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`
+  return `${Math.round(n / 1024)} KB`
+}
+
+export default function RentalModal({ mode, property, rental, forceRentedByUs = false, onClose, onSaved }: Props) {
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [tenantMode, setTenantMode] = useState<'existing' | 'new'>('existing')
-  const [form, setForm] = useState<FormState>(() => buildInitialForm(mode, property, rental))
+  const [form, setForm] = useState<FormState>(() => buildInitialForm(mode, property, rental, forceRentedByUs))
   const [endReason, setEndReason] = useState(END_REASONS[0])
   const [endReasonOther, setEndReasonOther] = useState('')
   const [endNote, setEndNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  // Document state
+  const [existingDocs, setExistingDocs] = useState<RentalDocument[]>([])
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
+  const [uploadingDocs, setUploadingDocs] = useState(false)
+
   useEffect(() => {
     getTenants().then(setTenants).catch(() => setTenants([]))
   }, [])
+
+  // Load existing docs in edit mode
+  useEffect(() => {
+    if (mode === 'edit' && rental?.id) {
+      listRentalDocuments(rental.id).then(setExistingDocs).catch(() => setExistingDocs([]))
+    }
+  }, [mode, rental?.id])
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm(f => ({ ...f, [key]: value }))
@@ -92,10 +111,47 @@ export default function RentalModal({ mode, property, rental, onClose, onSaved }
     return 'ปิดสัญญาเช่า'
   }, [mode])
 
+  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    setPendingFiles(prev => [...prev, ...files])
+    e.target.value = ''
+  }
+
+  const removePending = (idx: number) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  const handleDeleteExisting = async (doc: RentalDocument) => {
+    try {
+      await deleteRentalDocument(doc.id)
+      setExistingDocs(prev => prev.filter(d => d.id !== doc.id))
+    } catch (e) {
+      alert('ลบไฟล์ไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'))
+    }
+  }
+
+  const handleOpenDoc = async (doc: RentalDocument, forceDownload = false) => {
+    try {
+      const result = await getRentalDocumentSignedUrl(doc.id, forceDownload)
+      if (result.disposition === 'inline') {
+        window.open(result.url, '_blank')
+      } else {
+        const res = await fetch(result.url)
+        const blob = await res.blob()
+        const a = document.createElement('a')
+        a.href = URL.createObjectURL(blob)
+        a.download = result.fileName
+        a.click()
+        URL.revokeObjectURL(a.href)
+      }
+    } catch (e) {
+      alert('เปิดไฟล์ไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'เกิดข้อผิดพลาด'))
+    }
+  }
+
   const handleCreateOrEdit = async () => {
     setError('')
 
-    // Validate dates
     if (!form.startDate || !form.endDate) {
       setError('กรุณาระบุวันเริ่ม-สิ้นสุดสัญญา')
       return
@@ -157,13 +213,31 @@ export default function RentalModal({ mode, property, rental, onClose, onSaved }
         monthly_rent: Number(form.monthlyRent),
         deposit: Number(form.deposit || 0),
         commission: Number(form.commission || 0),
-        rented_by_us: form.rentedByUs,
+        rented_by_us: forceRentedByUs || form.rentedByUs,
         status: 'active' as const,
         note: form.note.trim() || undefined,
       }
       const saved = mode === 'edit' && rental
         ? await updateRental(rental.id, payload)
         : await createRental(payload)
+
+      // Upload pending documents
+      if (pendingFiles.length > 0) {
+        setUploadingDocs(true)
+        const failedFiles: string[] = []
+        for (const file of pendingFiles) {
+          try {
+            await uploadRentalDocument(saved.id, file)
+          } catch (e) {
+            failedFiles.push(`${file.name}: ${e instanceof Error ? e.message : 'ผิดพลาด'}`)
+          }
+        }
+        setUploadingDocs(false)
+        if (failedFiles.length > 0) {
+          alert('อัปโหลดเอกสารบางไฟล์ไม่สำเร็จ:\n' + failedFiles.join('\n'))
+        }
+      }
+
       onSaved(saved)
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
@@ -196,10 +270,12 @@ export default function RentalModal({ mode, property, rental, onClose, onSaved }
     }
   }
 
+  const isBusy = saving || uploadingDocs
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.4)' }}
-      onClick={() => !saving && onClose()}>
+      onClick={() => !isBusy && onClose()}>
       <div className="rounded-2xl p-6 w-full max-w-lg shadow-xl max-h-[90vh] overflow-auto"
         style={{ background: 'white' }}
         onClick={e => e.stopPropagation()}>
@@ -282,35 +358,113 @@ export default function RentalModal({ mode, property, rental, onClose, onSaved }
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>ค่าเช่า/เดือน *</label>
-                <input type="number" className={FIELD} style={FIELD_STYLE} value={form.monthlyRent}
-                  onChange={e => set('monthlyRent', e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เงินประกัน</label>
-                <input type="number" className={FIELD} style={FIELD_STYLE} value={form.deposit}
-                  onChange={e => set('deposit', e.target.value)} placeholder="0" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>ค่านายหน้า</label>
-                <input type="number" className={FIELD} style={FIELD_STYLE} value={form.commission}
-                  onChange={e => set('commission', e.target.value)} placeholder="0" />
+            {/* ค่าแรกเข้า group */}
+            <div>
+              <p className="text-xs font-semibold mb-2" style={{ color: 'var(--brown)' }}>ค่าแรกเข้า</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>ค่าเช่า/เดือน *</label>
+                  <input type="number" className={FIELD} style={FIELD_STYLE} value={form.monthlyRent}
+                    onChange={e => set('monthlyRent', e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>เงินประกัน</label>
+                  <input type="number" className={FIELD} style={FIELD_STYLE} value={form.deposit}
+                    onChange={e => set('deposit', e.target.value)} placeholder="0" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>ค่านายหน้า</label>
+                  <input type="number" className={FIELD} style={FIELD_STYLE} value={form.commission}
+                    onChange={e => set('commission', e.target.value)} placeholder="0" />
+                </div>
               </div>
             </div>
 
-            <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-mid)' }}>
-              <input type="checkbox" checked={form.rentedByUs}
-                onChange={e => set('rentedByUs', e.target.checked)}
-                style={{ accentColor: 'var(--terracotta)' }} />
-              เช่าผ่านเรา (รับค่านายหน้า)
-            </label>
+            {/* rented_by_us: hidden when forceRentedByUs, read-only label in edit, checkbox in create */}
+            {forceRentedByUs ? null : mode === 'edit' ? (
+              <p className="text-xs" style={{ color: 'var(--text-mid)' }}>
+                เช่าผ่านเรา: <span className="font-medium" style={{ color: 'var(--text-dark)' }}>
+                  {form.rentedByUs ? 'ใช่' : 'ไม่ใช่'}
+                </span>
+              </p>
+            ) : (
+              <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--text-mid)' }}>
+                <input type="checkbox" checked={form.rentedByUs}
+                  onChange={e => set('rentedByUs', e.target.checked)}
+                  style={{ accentColor: 'var(--terracotta)' }} />
+                เช่าผ่านเรา (รับค่านายหน้า)
+              </label>
+            )}
 
             <div>
               <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-mid)' }}>หมายเหตุ</label>
               <textarea className={FIELD} style={FIELD_STYLE} rows={2} value={form.note}
                 onChange={e => set('note', e.target.value)} placeholder="บันทึกเพิ่มเติม..." />
+            </div>
+
+            {/* เอกสารสัญญา */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Paperclip size={13} style={{ color: 'var(--terracotta)' }} />
+                <p className="text-xs font-semibold" style={{ color: 'var(--brown)' }}>เอกสารสัญญา</p>
+              </div>
+
+              {/* Existing docs (edit mode only) */}
+              {existingDocs.length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  {existingDocs.map(doc => (
+                    <div key={doc.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl border text-xs"
+                      style={{ borderColor: 'rgba(196,98,45,0.15)', background: 'rgba(196,98,45,0.03)' }}>
+                      <FileText size={12} style={{ color: 'var(--text-light)', flexShrink: 0 }} />
+                      <span className="flex-1 truncate" style={{ color: 'var(--text-dark)' }}>{doc.file_name}</span>
+                      <span style={{ color: 'var(--text-light)', flexShrink: 0 }}>{formatBytes(doc.size_bytes)}</span>
+                      <button type="button" onClick={() => handleOpenDoc(doc, false)}
+                        className="p-1 rounded hover:opacity-70" style={{ color: 'var(--terracotta)' }} title="ดูไฟล์">
+                        <Eye size={12} />
+                      </button>
+                      <button type="button" onClick={() => handleOpenDoc(doc, true)}
+                        className="p-1 rounded hover:opacity-70" style={{ color: 'var(--text-mid)' }} title="ดาวน์โหลด">
+                        <Download size={12} />
+                      </button>
+                      <button type="button" onClick={() => handleDeleteExisting(doc)}
+                        className="p-1 rounded hover:opacity-70" style={{ color: '#dc2626' }} title="ลบ">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Pending files */}
+              {pendingFiles.length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  {pendingFiles.map((file, idx) => (
+                    <div key={idx}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl border text-xs"
+                      style={{ borderColor: 'rgba(196,98,45,0.15)', background: 'rgba(196,98,45,0.04)' }}>
+                      <FileText size={12} style={{ color: 'var(--terracotta)', flexShrink: 0 }} />
+                      <span className="flex-1 truncate" style={{ color: 'var(--text-dark)' }}>{file.name}</span>
+                      <span style={{ color: 'var(--text-light)', flexShrink: 0 }}>{formatBytes(file.size)}</span>
+                      <button type="button" onClick={() => removePending(idx)}
+                        className="p-1 rounded hover:opacity-70" style={{ color: '#dc2626' }} title="ยกเลิก">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs cursor-pointer hover:opacity-80 transition-opacity"
+                style={{ borderColor: 'rgba(196,98,45,0.3)', color: 'var(--terracotta)', background: 'white' }}>
+                <Plus size={12} /> เพิ่มไฟล์
+                <input type="file" multiple className="sr-only"
+                  accept=".pdf,.docx,.jpg,.jpeg,.png,.webp"
+                  onChange={handleFilePick} />
+              </label>
+              <p className="mt-1 text-[10px]" style={{ color: 'var(--text-light)' }}>
+                PDF, DOCX, JPG, PNG, WEBP — สูงสุด 20 MB ต่อไฟล์
+              </p>
             </div>
           </div>
         )}
@@ -321,15 +475,15 @@ export default function RentalModal({ mode, property, rental, onClose, onSaved }
         )}
 
         <div className="flex gap-3 justify-end mt-6">
-          <button onClick={onClose} disabled={saving}
+          <button onClick={onClose} disabled={isBusy}
             className="px-4 py-2 rounded-xl text-sm border"
             style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--text-mid)' }}>
             ยกเลิก
           </button>
-          <button onClick={mode === 'end' ? handleEnd : handleCreateOrEdit} disabled={saving}
+          <button onClick={mode === 'end' ? handleEnd : handleCreateOrEdit} disabled={isBusy}
             className="px-4 py-2 rounded-xl text-sm text-white font-medium"
-            style={{ background: mode === 'end' ? '#dc2626' : 'var(--terracotta)', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'กำลังบันทึก...' : mode === 'end' ? 'ปิดสัญญา' : mode === 'edit' ? 'บันทึก' : 'สร้างสัญญา'}
+            style={{ background: mode === 'end' ? '#dc2626' : 'var(--terracotta)', opacity: isBusy ? 0.7 : 1 }}>
+            {uploadingDocs ? 'กำลังอัปโหลดเอกสาร...' : saving ? 'กำลังบันทึก...' : mode === 'end' ? 'ปิดสัญญา' : mode === 'edit' ? 'บันทึก' : 'สร้างสัญญา'}
           </button>
         </div>
       </div>

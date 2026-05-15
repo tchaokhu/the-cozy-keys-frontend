@@ -5,7 +5,10 @@ import Link from 'next/link'
 import { ArrowLeft, MapPin, BedDouble, Bath, Square, Phone, MessageCircle, Calendar, ChevronLeft, ChevronRight, X, ZoomIn, Dumbbell, TreePine, ExternalLink } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import { createInquiry, getPropertyById } from '@/lib/supabase'
+import { getPropertyById } from '@/lib/supabase'
+import { submitInquiry } from '@/app/contact/actions'
+import { safeHttpUrl } from '@/lib/validate'
+import { LINE_OA_URL } from '@/lib/brand'
 import { Property } from '@/types'
 
 const STATUS_INFO = {
@@ -26,6 +29,7 @@ export default function PropertyDetailPage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', message: '', preferred_date: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
   if (!property) {
     return (
@@ -50,14 +54,11 @@ export default function PropertyDetailPage() {
   const handleSubmit = async () => {
     if (!form.name || !form.phone) return
     setSubmitting(true)
-    try {
-      await createInquiry({ property_id: property.id, ...form })
-      setSubmitted(true)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSubmitting(false)
-    }
+    setErrorMsg('')
+    const res = await submitInquiry({ property_id: property.id, ...form })
+    if (res.ok) setSubmitted(true)
+    else setErrorMsg(res.error || 'บันทึกไม่สำเร็จ')
+    setSubmitting(false)
   }
 
   return (
@@ -185,8 +186,8 @@ export default function PropertyDetailPage() {
                   <div className="flex items-center gap-1 text-sm" style={{ color: 'var(--text-light)' }}>
                     <MapPin size={13} /> {property.location}, {property.province}
                   </div>
-                  {property.buildingInfo?.google_map_url && (
-                    <a href={property.buildingInfo.google_map_url} target="_blank" rel="noopener noreferrer"
+                  {safeHttpUrl(property.buildingInfo?.google_map_url) && (
+                    <a href={safeHttpUrl(property.buildingInfo?.google_map_url)!} target="_blank" rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 mt-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors hover:opacity-90"
                       style={{ color: 'white', background: 'var(--terracotta)' }}>
                       <MapPin size={15} /> ดูแผนที่ Google Maps <ExternalLink size={13} />
@@ -295,10 +296,10 @@ export default function PropertyDetailPage() {
                 ) : (
                   <div className="flex flex-col gap-4">
                     {[
-                      { key: 'name', label: 'ชื่อ-นามสกุล *', placeholder: 'เช่น สมชาย ใจดี', type: 'text' },
-                      { key: 'phone', label: 'เบอร์โทรศัพท์ *', placeholder: '08X-XXX-XXXX', type: 'tel' },
-                      { key: 'email', label: 'อีเมล (ไม่บังคับ)', placeholder: 'email@example.com', type: 'email' },
-                    ].map(({ key, label, placeholder, type }) => (
+                      { key: 'name', label: 'ชื่อ-นามสกุล *', placeholder: 'เช่น สมชาย ใจดี', type: 'text', max: 100 },
+                      { key: 'phone', label: 'เบอร์โทรศัพท์ *', placeholder: '08X-XXX-XXXX', type: 'tel', max: 20 },
+                      { key: 'email', label: 'อีเมล (ไม่บังคับ)', placeholder: 'email@example.com', type: 'email', max: 200 },
+                    ].map(({ key, label, placeholder, type, max }) => (
                       <div key={key}>
                         <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-mid)' }}>
                           {label}
@@ -306,6 +307,7 @@ export default function PropertyDetailPage() {
                         <input
                           type={type}
                           placeholder={placeholder}
+                          maxLength={max}
                           value={form[key as keyof typeof form]}
                           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                           className="w-full px-4 py-3 rounded-xl text-sm border outline-none transition-all"
@@ -338,6 +340,7 @@ export default function PropertyDetailPage() {
                       </label>
                       <textarea
                         rows={3}
+                        maxLength={2000}
                         placeholder="ต้องการสอบถามเพิ่มเติม หรือมีเงื่อนไขพิเศษ..."
                         value={form.message}
                         onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
@@ -347,6 +350,12 @@ export default function PropertyDetailPage() {
                         onBlur={e => (e.target.style.borderColor = 'rgba(196,98,45,0.15)')}
                       />
                     </div>
+
+                    {errorMsg && (
+                      <div className="text-xs px-3 py-2 rounded-xl" style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>
+                        {errorMsg}
+                      </div>
+                    )}
 
                     <button
                       onClick={handleSubmit}
@@ -372,7 +381,9 @@ export default function PropertyDetailPage() {
                           <Phone size={13} /> โทร
                         </a>
                         <a
-                          href="@thecozykeys"
+                          href={LINE_OA_URL}
+                          target="_blank"
+                          rel="noreferrer"
                           className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-medium border transition-all"
                           style={{ borderColor: 'rgba(196,98,45,0.2)', color: 'var(--brown)' }}
                         >

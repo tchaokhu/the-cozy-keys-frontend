@@ -1,5 +1,6 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Property, Inquiry, Owner, Building, ScheduledPost, Tenant, Rental, Payment, PaymentStatus } from '@/types'
+import { createBrowserClient } from '@supabase/ssr'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Property, Inquiry, Owner, Building, Tenant, Rental, Payment, PaymentStatus, PostTemplate, DocumentTemplate, DocumentTemplateCategory, RentalDocument, PostingPlatform, PropertyPosting } from '@/types'
 
 let _supabase: SupabaseClient | null = null
 
@@ -8,7 +9,7 @@ function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) throw new Error('Missing Supabase env vars')
-  _supabase = createClient(url, key)
+  _supabase = createBrowserClient(url, key)
   return _supabase
 }
 
@@ -26,15 +27,36 @@ export async function signOut() {
   if (error) throw error
 }
 
-export async function getSession() {
-  const sb = getSupabase()
-  const { data: { session } } = await sb.auth.getSession()
-  if (session) return session
+// Discriminated result so callers can distinguish "user must log in again"
+// from "transient network/refresh failure". Previously both collapsed to
+// null, which forced callers to redirect on every blip.
+export type SessionResult =
+  | { kind: 'session'; session: NonNullable<Awaited<ReturnType<SupabaseClient['auth']['getSession']>>['data']['session']> }
+  | { kind: 'expired' }
+  | { kind: 'error'; error: Error }
 
-  // Session expired or missing — try refreshing with the refresh token
-  const { data: { session: refreshed }, error } = await sb.auth.refreshSession()
-  if (error || !refreshed) return null
-  return refreshed
+export async function getSession(): Promise<SessionResult> {
+  const sb = getSupabase()
+  try {
+    const { data: { session }, error: getErr } = await sb.auth.getSession()
+    if (getErr) return { kind: 'error', error: getErr }
+    if (session) return { kind: 'session', session }
+
+    // No live session — try the refresh token.
+    const { data: { session: refreshed }, error: refreshErr } = await sb.auth.refreshSession()
+    if (refreshErr) {
+      // refresh_token_not_found / invalid_grant / expired = user must sign in
+      const msg = refreshErr.message.toLowerCase()
+      if (msg.includes('refresh') || msg.includes('expired') || msg.includes('invalid')) {
+        return { kind: 'expired' }
+      }
+      return { kind: 'error', error: refreshErr }
+    }
+    if (!refreshed) return { kind: 'expired' }
+    return { kind: 'session', session: refreshed }
+  } catch (e) {
+    return { kind: 'error', error: e instanceof Error ? e : new Error(String(e)) }
+  }
 }
 
 export function onAuthStateChange(callback: (session: unknown) => void) {
@@ -59,11 +81,21 @@ export function getRentalStatus(end_date?: string | null): { daysLeft: number | 
   return { daysLeft, state: 'active' }
 }
 
-// Auto-expire: close active rentals whose end_date has passed,
-// and flip their properties back to 'available'.
-async function expireOverdueRentals(): Promise<void> {
+// Asia/Bangkok local date in YYYY-MM-DD. Using UTC here would mis-classify
+// rentals around UTC midnight Bangkok evening — the same fix already applied
+// in endRental() for payment cleanup.
+function todayBangkok(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date())
+}
+
+// Close active rentals whose end_date has passed, flip their properties back
+// to 'available'. Exposed only as an explicit admin call — previously this
+// ran on every public listing fetch, which (a) silently no-op'd under RLS
+// for anon users, and (b) issued writes from a read-only request. Now admins
+// trigger it from the dashboard / property pages.
+export async function expireOverdueRentals(): Promise<{ rentals: number; properties: number }> {
   const sb = getSupabase()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayBangkok()
   const { data: overdue, error: fetchErr } = await sb
     .from('rentals')
     .select('id, property_id')
@@ -71,9 +103,9 @@ async function expireOverdueRentals(): Promise<void> {
     .lt('end_date', today)
   if (fetchErr) {
     console.warn('Auto-expire fetch failed:', fetchErr.message)
-    return
+    return { rentals: 0, properties: 0 }
   }
-  if (!overdue || overdue.length === 0) return
+  if (!overdue || overdue.length === 0) return { rentals: 0, properties: 0 }
 
   const rentalIds = overdue.map(r => r.id)
   const propertyIds = Array.from(new Set(overdue.map(r => r.property_id)))
@@ -91,6 +123,8 @@ async function expireOverdueRentals(): Promise<void> {
     .in('id', propertyIds)
     .eq('status', 'rented')
   if (pErr) console.warn('Property auto-expire update failed:', pErr.message)
+
+  return { rentals: rentalIds.length, properties: propertyIds.length }
 }
 
 // ─── Properties ──────────────────────────────────────────────────────────────
@@ -103,7 +137,8 @@ export async function getProperties(filters?: Partial<{
   status: string
 }>): Promise<Property[]> {
   const sb = getSupabase()
-  await expireOverdueRentals()
+  // expireOverdueRentals() used to run here, but it issued writes from a
+  // read-only public path. Admin pages now trigger it explicitly.
   let query = sb.from('properties').select('*').order('created_at', { ascending: false })
   if (filters?.district) query = query.eq('district', filters.district)
   if (filters?.property_type) query = query.eq('property_type', filters.property_type)
@@ -152,6 +187,34 @@ export async function getProperties(filters?: Partial<{
     if (tenants) tenantsMap = Object.fromEntries(tenants.map((t: Tenant) => [t.id, t]))
   }
 
+  // Posting platforms hydration for the badge column
+  const { data: allPostings } = await sb
+    .from('property_postings')
+    .select('*')
+    .in('property_id', propIds)
+    .eq('posted', true)
+  const { data: allPlatforms } = await sb
+    .from('posting_platforms')
+    .select('id, name')
+  const platformNameMap: Record<string, string> = {}
+  if (allPlatforms) {
+    for (const pl of allPlatforms as { id: string; name: string }[]) {
+      platformNameMap[pl.id] = pl.name
+    }
+  }
+  const postingsMap: Record<string, Property['postings']> = {}
+  if (allPostings) {
+    for (const pp of allPostings as PropertyPosting[]) {
+      if (!postingsMap[pp.property_id]) postingsMap[pp.property_id] = []
+      postingsMap[pp.property_id]!.push({
+        platform_id: pp.platform_id,
+        platform_name: platformNameMap[pp.platform_id] ?? '',
+        posted: pp.posted,
+        post_url: pp.post_url,
+      })
+    }
+  }
+
   return props.map((p: Property) => {
     const rental = rentalsMap[p.id]
     return {
@@ -161,6 +224,7 @@ export async function getProperties(filters?: Partial<{
       active_rental: rental
         ? { ...rental, tenant: rental.tenant_id ? tenantsMap[rental.tenant_id] : undefined }
         : undefined,
+      postings: postingsMap[p.id] ?? [],
     }
   })
 }
@@ -193,12 +257,8 @@ export async function getPropertyById(id: string): Promise<Property | null> {
 }
 
 // ─── Inquiries ───────────────────────────────────────────────────────────────
-export async function createInquiry(inquiry: Omit<Inquiry, 'id' | 'status' | 'created_at'>): Promise<void> {
-  const sb = getSupabase()
-  const { error } = await sb.from('inquiries').insert([{ ...inquiry, status: 'new' }])
-  if (error) throw error
-}
-
+// Public submission goes through app/contact/actions.ts (Server Action with
+// rate limit + validation). This module only exposes the admin-side reads.
 export async function getInquiries(): Promise<Inquiry[]> {
   const sb = getSupabase()
   const { data, error } = await sb
@@ -216,24 +276,28 @@ export async function updateInquiryStatus(id: string, status: string): Promise<v
 }
 
 // ─── Images ──────────────────────────────────────────────────────────────────
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'))
-    reader.readAsDataURL(file)
-  })
-}
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024 // 5 MB
+const ALLOWED_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
 
 export async function uploadPropertyImage(file: File): Promise<string> {
-  const sb = getSupabase()
-  const ext = file.name.split('.').pop()
-  const path = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-  const { error } = await sb.storage.from('property-images').upload(path, file, { upsert: false })
-  if (error) {
-    console.warn('Storage upload failed, falling back to data URL:', error.message)
-    return fileToDataUrl(file)
+  if (!ALLOWED_IMAGE_TYPES.includes(file.type as typeof ALLOWED_IMAGE_TYPES[number])) {
+    throw new Error('ไฟล์ไม่ใช่รูปภาพที่รองรับ (JPEG / PNG / WebP / GIF เท่านั้น)')
   }
+  if (file.size > MAX_IMAGE_BYTES) {
+    throw new Error('ไฟล์ใหญ่เกิน 5MB')
+  }
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  if (!ALLOWED_EXTS.has(ext)) {
+    throw new Error('นามสกุลไฟล์ไม่รองรับ')
+  }
+  const sb = getSupabase()
+  const path = `properties/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const { error } = await sb.storage.from('property-images').upload(path, file, {
+    upsert: false,
+    contentType: file.type,
+  })
+  if (error) throw new Error(`อัปโหลดรูปไม่สำเร็จ: ${error.message}`)
   const { data } = sb.storage.from('property-images').getPublicUrl(path)
   return data.publicUrl
 }
@@ -247,14 +311,88 @@ export async function deletePropertyImage(url: string): Promise<void> {
   if (error) console.warn('Storage delete failed:', error.message)
 }
 
+// Admin-triggered: find Storage objects no longer referenced from any
+// properties.images row, and optionally delete them. Used to recover from
+// fire-and-forget deletePropertyImage() failures.
+export interface OrphanReport {
+  orphans: string[]      // paths inside property-images bucket
+  deleted: number
+}
+
+export async function reconcilePropertyImages(opts: { dryRun: boolean }): Promise<OrphanReport> {
+  const sb = getSupabase()
+
+  // 1. Collect every image URL referenced by a property row.
+  const { data: props, error } = await sb.from('properties').select('images')
+  if (error) throw error
+  const referenced = new Set<string>()
+  for (const row of (props || []) as { images: string[] }[]) {
+    for (const u of row.images || []) {
+      const m = u.match(/\/storage\/v1\/object\/public\/property-images\/(.+)$/)
+      if (m) referenced.add(m[1])
+    }
+  }
+
+  // 2. List the bucket. Supabase list() returns max 1000 per call — page through
+  // the "properties/" prefix where uploadPropertyImage writes.
+  const orphans: string[] = []
+  let offset = 0
+  const pageSize = 1000
+  while (true) {
+    const { data, error: listErr } = await sb.storage
+      .from('property-images')
+      .list('properties', { limit: pageSize, offset, sortBy: { column: 'name', order: 'asc' } })
+    if (listErr) throw listErr
+    if (!data || data.length === 0) break
+    for (const obj of data) {
+      const fullPath = `properties/${obj.name}`
+      if (!referenced.has(fullPath)) orphans.push(fullPath)
+    }
+    if (data.length < pageSize) break
+    offset += pageSize
+  }
+
+  // 3. Optionally delete.
+  let deleted = 0
+  if (!opts.dryRun && orphans.length > 0) {
+    // remove() accepts up to 1000 paths per call.
+    for (let i = 0; i < orphans.length; i += 1000) {
+      const batch = orphans.slice(i, i + 1000)
+      const { error: rmErr } = await sb.storage.from('property-images').remove(batch)
+      if (rmErr) throw rmErr
+      deleted += batch.length
+    }
+  }
+
+  return { orphans, deleted }
+}
+
+// Only send columns that exist in the properties table.
+// Used by BOTH create + update so hydrated fields (owner, buildingInfo,
+// active_rental) get stripped before the row hits Postgres.
+const PROPERTY_COLUMNS = [
+  'title', 'title_en', 'description', 'price_monthly', 'property_type',
+  'bedrooms', 'bathrooms', 'area_sqm', 'floor', 'building', 'room_number',
+  'location', 'district', 'province', 'status', 'rented_until', 'rented_by_us', 'images', 'contact_line', 'owner_id', 'building_id',
+] as const
+
+function pickPropertyColumns(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const col of PROPERTY_COLUMNS) {
+    if (col in input && input[col] !== undefined) out[col] = input[col]
+  }
+  return out
+}
+
 // ─── Properties CRUD ─────────────────────────────────────────────────────────
 export async function createProperty(
   property: Omit<Property, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Property> {
   const sb = getSupabase()
+  const payload = pickPropertyColumns(property as unknown as Record<string, unknown>)
   const { data, error } = await sb
     .from('properties')
-    .insert([property])
+    .insert([payload])
     .select()
     .maybeSingle()
   if (error) throw error
@@ -262,22 +400,14 @@ export async function createProperty(
   return data
 }
 
-// Only send columns that exist in the properties table
-const PROPERTY_COLUMNS = [
-  'title', 'title_en', 'description', 'price_monthly', 'property_type',
-  'bedrooms', 'bathrooms', 'area_sqm', 'floor', 'building', 'room_number',
-  'location', 'district', 'province', 'status', 'rented_until', 'rented_by_us', 'images', 'contact_line', 'owner_id', 'building_id',
-] as const
-
 export async function updateProperty(
   id: string,
   property: Partial<Omit<Property, 'id' | 'created_at'>>
 ): Promise<Property> {
   const sb = getSupabase()
-  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  const src = property as Record<string, unknown>
-  for (const col of PROPERTY_COLUMNS) {
-    if (col in src && src[col] !== undefined) payload[col] = src[col]
+  const payload = {
+    ...pickPropertyColumns(property as unknown as Record<string, unknown>),
+    updated_at: new Date().toISOString(),
   }
   const { data, error } = await sb
     .from('properties')
@@ -572,7 +702,8 @@ export async function endRental(
     .eq('id', data.property_id)
     .eq('status', 'rented')
   // Delete unpaid payments with due_date after ended_at — keep historical records
-  const endedDate = now.slice(0, 10)
+  // Use Asia/Bangkok local date so payments due "today TH" are not wrongly culled near UTC midnight.
+  const endedDate = todayBangkok()
   await sb.from('payments')
     .delete()
     .eq('rental_id', id)
@@ -738,6 +869,15 @@ export async function updatePayment(
   for (const col of PAYMENT_COLUMNS) {
     if (col in src) payload[col] = src[col] // allow null to clear paid_date/paid_amount
   }
+  // Mirror the payments_paid_pair_consistent CHECK so the UI gets a clear
+  // error rather than a generic Postgres constraint violation.
+  if ('paid_date' in payload || 'paid_amount' in payload) {
+    const hasDate = payload.paid_date != null
+    const hasAmount = payload.paid_amount != null
+    if (hasDate !== hasAmount) {
+      throw new Error('ต้องระบุทั้งวันที่จ่ายและจำนวนเงินที่จ่าย หรือเว้นว่างทั้งคู่')
+    }
+  }
   const { data, error } = await sb.from('payments').update(payload).eq('id', id).select().maybeSingle()
   if (error) throw error
   if (!data) throw new Error('Payment not found')
@@ -750,24 +890,47 @@ export async function deletePayment(id: string): Promise<void> {
   if (error) throw error
 }
 
-// ─── Scheduled Posts ────────────────────────────────────────────────────────
-export async function getScheduledPosts(): Promise<ScheduledPost[]> {
+// ─── Post Templates ─────────────────────────────────────────────────────────
+const POST_TEMPLATE_COLUMNS = ['name', 'is_default', 'sections', 'notes'] as const
+
+function pickPostTemplateColumns(input: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const col of POST_TEMPLATE_COLUMNS) {
+    if (col in input && input[col] !== undefined) out[col] = input[col]
+  }
+  return out
+}
+
+export async function getPostTemplates(): Promise<PostTemplate[]> {
   const sb = getSupabase()
   const { data, error } = await sb
-    .from('scheduled_posts')
-    .select('*, property:properties(*)')
-    .order('scheduled_date', { ascending: true })
+    .from('post_templates')
+    .select('*')
+    .order('is_default', { ascending: false })
+    .order('updated_at', { ascending: false })
   if (error) throw error
   return data || []
 }
 
-export async function createScheduledPost(
-  post: Omit<ScheduledPost, 'id' | 'created_at' | 'property'>
-): Promise<ScheduledPost> {
+export async function getPostTemplate(id: string): Promise<PostTemplate | null> {
   const sb = getSupabase()
   const { data, error } = await sb
-    .from('scheduled_posts')
-    .insert([post])
+    .from('post_templates')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+export async function createPostTemplate(
+  input: Omit<PostTemplate, 'id' | 'created_at' | 'updated_at'>
+): Promise<PostTemplate> {
+  const sb = getSupabase()
+  const payload = pickPostTemplateColumns(input as unknown as Record<string, unknown>)
+  const { data, error } = await sb
+    .from('post_templates')
+    .insert([payload])
     .select()
     .maybeSingle()
   if (error) throw error
@@ -775,24 +938,415 @@ export async function createScheduledPost(
   return data
 }
 
-export async function updateScheduledPost(
+export async function updatePostTemplate(
   id: string,
-  updates: Partial<Pick<ScheduledPost, 'scheduled_date' | 'scheduled_time' | 'status' | 'fb_post_id' | 'post_content_th' | 'post_content_en' | 'images'>>
-): Promise<ScheduledPost> {
+  patch: Partial<Omit<PostTemplate, 'id' | 'created_at' | 'updated_at'>>
+): Promise<PostTemplate> {
   const sb = getSupabase()
+  const payload = pickPostTemplateColumns(patch as unknown as Record<string, unknown>)
   const { data, error } = await sb
-    .from('scheduled_posts')
-    .update(updates)
+    .from('post_templates')
+    .update(payload)
     .eq('id', id)
     .select()
     .maybeSingle()
   if (error) throw error
-  if (!data) throw new Error('Scheduled post not found')
+  if (!data) throw new Error('Template not found')
   return data
 }
 
-export async function deleteScheduledPost(id: string): Promise<void> {
+export async function deletePostTemplate(id: string): Promise<void> {
   const sb = getSupabase()
-  const { error } = await sb.from('scheduled_posts').delete().eq('id', id)
+  // Block delete of default — client guard before DB call.
+  const existing = await getPostTemplate(id)
+  if (!existing) throw new Error('Template not found')
+  if (existing.is_default) throw new Error('ไม่สามารถลบเทมเพลตเริ่มต้นได้ ตั้งเทมเพลตอื่นเป็นค่าเริ่มต้นก่อน')
+  const { error } = await sb.from('post_templates').delete().eq('id', id)
   if (error) throw error
+}
+
+export async function setDefaultPostTemplate(id: string): Promise<void> {
+  const sb = getSupabase()
+  // Two-step clear-then-set. Partial unique index is the safety net for races.
+  const { error: clearErr } = await sb
+    .from('post_templates')
+    .update({ is_default: false })
+    .eq('is_default', true)
+  if (clearErr) throw clearErr
+  const { error: setErr } = await sb
+    .from('post_templates')
+    .update({ is_default: true })
+    .eq('id', id)
+  if (setErr) throw setErr
+}
+
+// ─── Document Templates ─────────────────────────────────────────────────────
+const DOCUMENT_BUCKET = 'document-templates'
+const DOCUMENT_MAX_BYTES = 20 * 1024 * 1024 // 20 MB
+const DOCUMENT_MIME: Record<'pdf' | 'docx', string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+
+function validateDocumentFile(file: File, expectedExt: 'pdf' | 'docx'): void {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  if (ext !== expectedExt) {
+    throw new Error(`ไฟล์ PDF ต้องนามสกุล .pdf / ไฟล์ Word ต้องนามสกุล .docx`)
+  }
+  if (file.size > DOCUMENT_MAX_BYTES) {
+    throw new Error('ไฟล์ใหญ่เกิน 20MB')
+  }
+}
+
+export async function listDocumentTemplates(category?: DocumentTemplateCategory): Promise<DocumentTemplate[]> {
+  const sb = getSupabase()
+  let query = sb
+    .from('document_templates')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (category) query = query.eq('category', category)
+  const { data, error } = await query
+  if (error) throw error
+  return (data || []) as DocumentTemplate[]
+}
+
+export async function uploadDocumentTemplate(params: {
+  id?: string
+  category: DocumentTemplateCategory
+  title: string
+  description?: string | null
+  pdfFile?: File | null
+  docxFile?: File | null
+  removePdf?: boolean
+  removeDocx?: boolean
+}): Promise<DocumentTemplate> {
+  const sb = getSupabase()
+  const { id: existingId, category, title, description, pdfFile, docxFile, removePdf, removeDocx } = params
+
+  if (pdfFile) validateDocumentFile(pdfFile, 'pdf')
+  if (docxFile) validateDocumentFile(docxFile, 'docx')
+
+  if (!existingId) {
+    // CREATE: use client-generated UUID so storage paths can be set in the insert
+    if (!pdfFile && !docxFile) throw new Error('ต้องเลือกไฟล์ PDF หรือ DOCX อย่างน้อย 1 ไฟล์')
+
+    const newId = crypto.randomUUID()
+    const { data: { user } } = await sb.auth.getUser()
+
+    const pdfPath = pdfFile ? `${category}/${newId}.pdf` : null
+    const docxPath = docxFile ? `${category}/${newId}.docx` : null
+
+    const { data: row, error: insertErr } = await sb
+      .from('document_templates')
+      .insert([{
+        id: newId,
+        category,
+        title,
+        description: description ?? null,
+        pdf_storage_path: pdfPath,
+        pdf_file_name: pdfFile?.name ?? null,
+        pdf_size_bytes: pdfFile?.size ?? null,
+        docx_storage_path: docxPath,
+        docx_file_name: docxFile?.name ?? null,
+        docx_size_bytes: docxFile?.size ?? null,
+        uploaded_by: user?.id ?? null,
+      }])
+      .select()
+      .maybeSingle()
+    if (insertErr) throw insertErr
+    if (!row) throw new Error('Insert returned no data')
+
+    const uploaded: string[] = []
+    try {
+      if (pdfFile && pdfPath) {
+        const { error: upErr } = await sb.storage
+          .from(DOCUMENT_BUCKET)
+          .upload(pdfPath, pdfFile, { upsert: false, contentType: DOCUMENT_MIME.pdf })
+        if (upErr) throw new Error(`อัปโหลด PDF ไม่สำเร็จ: ${upErr.message}`)
+        uploaded.push(pdfPath)
+      }
+      if (docxFile && docxPath) {
+        const { error: upErr } = await sb.storage
+          .from(DOCUMENT_BUCKET)
+          .upload(docxPath, docxFile, { upsert: false, contentType: DOCUMENT_MIME.docx })
+        if (upErr) throw new Error(`อัปโหลด DOCX ไม่สำเร็จ: ${upErr.message}`)
+        uploaded.push(docxPath)
+      }
+    } catch (uploadErr) {
+      // Roll back: delete row and any already-uploaded objects
+      await sb.from('document_templates').delete().eq('id', newId)
+      if (uploaded.length) await sb.storage.from(DOCUMENT_BUCKET).remove(uploaded)
+      throw uploadErr
+    }
+
+    return row as DocumentTemplate
+  } else {
+    // EDIT: fetch existing row first
+    const { data: existing, error: fetchErr } = await sb
+      .from('document_templates')
+      .select('*')
+      .eq('id', existingId)
+      .maybeSingle()
+    if (fetchErr || !existing) throw new Error('ไม่พบเอกสาร')
+
+    const patch: Record<string, unknown> = { category, title, description: description ?? null }
+
+    // Determine whether at least one variant will remain after changes
+    const pdfWillExist = !removePdf && (pdfFile ? true : !!existing.pdf_storage_path)
+    const docxWillExist = !removeDocx && (docxFile ? true : !!existing.docx_storage_path)
+    if (!pdfWillExist && !docxWillExist) {
+      throw new Error('ต้องมีไฟล์อย่างน้อย 1 รูปแบบ (PDF หรือ DOCX)')
+    }
+
+    // PDF variant
+    if (removePdf) {
+      if (existing.pdf_storage_path) {
+        const { error: rmErr } = await sb.storage.from(DOCUMENT_BUCKET).remove([existing.pdf_storage_path])
+        if (rmErr) console.warn('Storage delete PDF failed:', rmErr.message)
+      }
+      patch.pdf_storage_path = null
+      patch.pdf_file_name = null
+      patch.pdf_size_bytes = null
+    } else if (pdfFile) {
+      const newPath = `${category}/${existingId}.pdf`
+      // If category changed, the old path has a different prefix — remove it
+      if (existing.pdf_storage_path && existing.pdf_storage_path !== newPath) {
+        const { error: rmErr } = await sb.storage.from(DOCUMENT_BUCKET).remove([existing.pdf_storage_path])
+        if (rmErr) console.warn('Storage delete old PDF failed:', rmErr.message)
+      }
+      const { error: upErr } = await sb.storage
+        .from(DOCUMENT_BUCKET)
+        .upload(newPath, pdfFile, { upsert: true, contentType: DOCUMENT_MIME.pdf })
+      if (upErr) throw new Error(`อัปโหลด PDF ไม่สำเร็จ: ${upErr.message}`)
+      patch.pdf_storage_path = newPath
+      patch.pdf_file_name = pdfFile.name
+      patch.pdf_size_bytes = pdfFile.size
+    }
+
+    // DOCX variant
+    if (removeDocx) {
+      if (existing.docx_storage_path) {
+        const { error: rmErr } = await sb.storage.from(DOCUMENT_BUCKET).remove([existing.docx_storage_path])
+        if (rmErr) console.warn('Storage delete DOCX failed:', rmErr.message)
+      }
+      patch.docx_storage_path = null
+      patch.docx_file_name = null
+      patch.docx_size_bytes = null
+    } else if (docxFile) {
+      const newPath = `${category}/${existingId}.docx`
+      if (existing.docx_storage_path && existing.docx_storage_path !== newPath) {
+        const { error: rmErr } = await sb.storage.from(DOCUMENT_BUCKET).remove([existing.docx_storage_path])
+        if (rmErr) console.warn('Storage delete old DOCX failed:', rmErr.message)
+      }
+      const { error: upErr } = await sb.storage
+        .from(DOCUMENT_BUCKET)
+        .upload(newPath, docxFile, { upsert: true, contentType: DOCUMENT_MIME.docx })
+      if (upErr) throw new Error(`อัปโหลด DOCX ไม่สำเร็จ: ${upErr.message}`)
+      patch.docx_storage_path = newPath
+      patch.docx_file_name = docxFile.name
+      patch.docx_size_bytes = docxFile.size
+    }
+
+    const { data: updated, error: updateErr } = await sb
+      .from('document_templates')
+      .update(patch)
+      .eq('id', existingId)
+      .select()
+      .maybeSingle()
+    if (updateErr) throw updateErr
+    if (!updated) throw new Error('Update returned no data')
+    return updated as DocumentTemplate
+  }
+}
+
+export async function updateDocumentTemplateMeta(
+  id: string,
+  patch: { title?: string; description?: string | null; category?: DocumentTemplateCategory }
+): Promise<DocumentTemplate> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('document_templates')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Document not found')
+  return data as DocumentTemplate
+}
+
+export async function deleteDocumentTemplate(id: string): Promise<void> {
+  const sb = getSupabase()
+  const { data: row } = await sb
+    .from('document_templates')
+    .select('pdf_storage_path, docx_storage_path')
+    .eq('id', id)
+    .maybeSingle()
+  const pathsToRemove = [row?.pdf_storage_path, row?.docx_storage_path].filter(Boolean) as string[]
+  if (pathsToRemove.length) {
+    const { error: rmErr } = await sb.storage.from(DOCUMENT_BUCKET).remove(pathsToRemove)
+    if (rmErr) console.warn('Storage delete failed:', rmErr.message)
+  }
+  const { error } = await sb.from('document_templates').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Rental Documents ────────────────────────────────────────────────────────
+const RENTAL_DOC_BUCKET = 'rental-documents'
+const RENTAL_DOC_MAX_BYTES = 20 * 1024 * 1024
+const RENTAL_DOC_ALLOWED_EXTS = ['pdf', 'docx', 'jpg', 'jpeg', 'png', 'webp']
+
+const RENTAL_DOC_MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+}
+
+export async function listRentalDocuments(rentalId: string): Promise<RentalDocument[]> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('rental_documents')
+    .select('*')
+    .eq('rental_id', rentalId)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return (data || []) as RentalDocument[]
+}
+
+export async function uploadRentalDocument(rentalId: string, file: File): Promise<RentalDocument> {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  if (!RENTAL_DOC_ALLOWED_EXTS.includes(ext)) {
+    throw new Error('ไฟล์ไม่รองรับ — รองรับเฉพาะ PDF, DOCX, JPG, PNG, WEBP')
+  }
+  if (file.size > RENTAL_DOC_MAX_BYTES) {
+    throw new Error('ไฟล์ใหญ่เกิน 20MB')
+  }
+  const mimeType = RENTAL_DOC_MIME[ext] ?? 'application/octet-stream'
+  const sb = getSupabase()
+  const docId = crypto.randomUUID()
+  const storagePath = `${rentalId}/${docId}.${ext}`
+  const { error: upErr } = await sb.storage
+    .from(RENTAL_DOC_BUCKET)
+    .upload(storagePath, file, { upsert: false, contentType: mimeType })
+  if (upErr) throw new Error(`อัปโหลดไฟล์ไม่สำเร็จ: ${upErr.message}`)
+  const { data: { user } } = await sb.auth.getUser()
+  const { data, error: insertErr } = await sb
+    .from('rental_documents')
+    .insert([{
+      id: docId,
+      rental_id: rentalId,
+      storage_path: storagePath,
+      file_name: file.name,
+      mime_type: mimeType,
+      size_bytes: file.size,
+      uploaded_by: user?.id ?? null,
+    }])
+    .select()
+    .maybeSingle()
+  if (insertErr) {
+    await sb.storage.from(RENTAL_DOC_BUCKET).remove([storagePath]).catch(() => {})
+    throw insertErr
+  }
+  if (!data) throw new Error('Insert returned no data')
+  return data as RentalDocument
+}
+
+export async function deleteRentalDocument(id: string): Promise<void> {
+  const sb = getSupabase()
+  const { data: row } = await sb
+    .from('rental_documents')
+    .select('storage_path')
+    .eq('id', id)
+    .maybeSingle()
+  if (row?.storage_path) {
+    const { error: rmErr } = await sb.storage.from(RENTAL_DOC_BUCKET).remove([row.storage_path])
+    if (rmErr) console.warn('Storage delete failed:', rmErr.message)
+  }
+  const { error } = await sb.from('rental_documents').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Posting Platforms ──────────────────────────────────────────────────────
+export async function listPostingPlatforms(opts?: { activeOnly?: boolean }): Promise<PostingPlatform[]> {
+  const sb = getSupabase()
+  let query = sb.from('posting_platforms').select('*').order('sort_order', { ascending: true })
+  if (opts?.activeOnly) query = query.eq('active', true)
+  const { data, error } = await query
+  if (error) throw error
+  return (data || []) as PostingPlatform[]
+}
+
+export async function createPostingPlatform(name: string): Promise<PostingPlatform> {
+  const sb = getSupabase()
+  const { data: maxRow } = await sb
+    .from('posting_platforms')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const nextOrder = ((maxRow as { sort_order: number } | null)?.sort_order ?? 0) + 10
+  const { data, error } = await sb
+    .from('posting_platforms')
+    .insert([{ name, sort_order: nextOrder, active: true }])
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Insert returned no data')
+  return data as PostingPlatform
+}
+
+export async function updatePostingPlatform(
+  id: string,
+  patch: { name?: string; sort_order?: number; active?: boolean }
+): Promise<PostingPlatform> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('posting_platforms')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new Error('Platform not found')
+  return data as PostingPlatform
+}
+
+export async function deletePostingPlatform(id: string): Promise<void> {
+  const sb = getSupabase()
+  const { error } = await sb.from('posting_platforms').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ─── Property Postings ──────────────────────────────────────────────────────
+export async function listPropertyPostings(propertyId: string): Promise<PropertyPosting[]> {
+  const sb = getSupabase()
+  const { data, error } = await sb
+    .from('property_postings')
+    .select('*')
+    .eq('property_id', propertyId)
+  if (error) throw error
+  return (data || []) as PropertyPosting[]
+}
+
+export async function upsertPropertyPostings(
+  propertyId: string,
+  items: Array<{ platform_id: string; posted: boolean; post_url: string | null }>
+): Promise<PropertyPosting[]> {
+  const sb = getSupabase()
+  if (items.length === 0) return []
+  const rows = items.map(item => ({
+    property_id: propertyId,
+    platform_id: item.platform_id,
+    posted: item.posted,
+    post_url: item.post_url || null,
+  }))
+  const { data, error } = await sb
+    .from('property_postings')
+    .upsert(rows, { onConflict: 'property_id,platform_id' })
+    .select()
+  if (error) throw error
+  return (data || []) as PropertyPosting[]
 }

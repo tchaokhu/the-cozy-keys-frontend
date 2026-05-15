@@ -39,8 +39,17 @@ export default function PaymentMarkPaidModal({ payment, onClose, onSaved }: Prop
   const handleSave = async () => {
     setError('')
     const amt = Number(paidAmount)
-    if (!paidDate) { setError('กรุณาระบุวันที่จ่าย'); return }
-    if (!amt || amt <= 0) { setError('กรุณาระบุจำนวนเงินที่จ่าย'); return }
+    // paid_date and paid_amount must move together — DB CHECK enforces this
+    // too (payments_paid_pair_consistent), but catch it here for a clear error.
+    if (!paidDate || !amt) {
+      setError('กรุณาระบุทั้งวันที่จ่ายและจำนวนเงิน')
+      return
+    }
+    if (amt <= 0) { setError('จำนวนเงินต้องมากกว่า 0'); return }
+    if (amt > payment.amount * 2) {
+      setError('จำนวนเงินสูงผิดปกติ กรุณาตรวจสอบอีกครั้ง')
+      return
+    }
     setSaving(true)
     try {
       const updated = await updatePayment(payment.id, {

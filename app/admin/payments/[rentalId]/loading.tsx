@@ -19,7 +19,7 @@ export default function PaymentDetailLoading() {
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebarSkeleton />
-      <main className="flex-1 p-8 pt-20 md:pt-8 space-y-6">
+      <main className="flex-1 p-8 pt-20 md:pt-24 space-y-6">
         <div className="skeleton h-4 w-32" />
         <div>
           <div className="skeleton h-7 w-64 mb-2" />

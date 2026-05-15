@@ -3,24 +3,23 @@ import { useState } from 'react'
 import { Phone, MessageCircle, MapPin, Clock } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
-import { createInquiry } from '@/lib/supabase'
+import { submitInquiry } from './actions'
+import { LINE_OA_URL } from '@/lib/brand'
 
 export default function ContactPage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', message: '', preferred_date: '' })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [errorMsg, setErrorMsg] = useState('')
 
   const handleSubmit = async () => {
     if (!form.name || !form.phone) return
     setSubmitting(true)
-    try {
-      await createInquiry({ property_id: '', ...form })
-      setSubmitted(true)
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setSubmitting(false)
-    }
+    setErrorMsg('')
+    const res = await submitInquiry(form)
+    if (res.ok) setSubmitted(true)
+    else setErrorMsg(res.error || 'บันทึกไม่สำเร็จ')
+    setSubmitting(false)
   }
 
   return (
@@ -46,7 +45,7 @@ export default function ContactPage() {
                 {[
                   { icon: <Phone size={18} />, label: 'K. Nut (นัท)', val: '087 670 6436', href: 'tel:0876706436' },
                   { icon: <Phone size={18} />, label: 'K. Dear (เดียร์)', val: '098 091 5461', href: 'tel:0980915461' },
-                  { icon: <MessageCircle size={18} />, label: 'LINE Official', val: '@TheCozyKeys', href: '@thecozykeys' },
+                  { icon: <MessageCircle size={18} />, label: 'LINE Official', val: '@TheCozyKeys', href: LINE_OA_URL },
                   { icon: <MapPin size={18} />, label: 'พื้นที่ให้บริการ', val: 'ศรีราชา · แหลมฉบัง · ชลบุรี', href: null },
                   { icon: <Clock size={18} />, label: 'เวลาทำการ', val: 'จันทร์–อาทิตย์ 08:00–20:00', href: null },
                 ].map(({ icon, label, val, href }) => (
@@ -71,7 +70,7 @@ export default function ContactPage() {
               </div>
 
               <a
-                href="@thecozykeys"
+                href={LINE_OA_URL}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl text-white font-medium transition-all duration-200"
@@ -97,13 +96,13 @@ export default function ContactPage() {
                   <h3 className="font-serif text-xl font-semibold mb-6" style={{ color: 'var(--brown)' }}>ส่งข้อความหาเรา</h3>
                   <div className="flex flex-col gap-4">
                     {[
-                      { key: 'name', label: 'ชื่อ-นามสกุล *', placeholder: 'เช่น สมชาย ใจดี', type: 'text' },
-                      { key: 'phone', label: 'เบอร์โทรศัพท์ *', placeholder: '08X-XXX-XXXX', type: 'tel' },
-                      { key: 'email', label: 'อีเมล (ไม่บังคับ)', placeholder: 'email@example.com', type: 'email' },
-                    ].map(({ key, label, placeholder, type }) => (
+                      { key: 'name', label: 'ชื่อ-นามสกุล *', placeholder: 'เช่น สมชาย ใจดี', type: 'text', max: 100 },
+                      { key: 'phone', label: 'เบอร์โทรศัพท์ *', placeholder: '08X-XXX-XXXX', type: 'tel', max: 20 },
+                      { key: 'email', label: 'อีเมล (ไม่บังคับ)', placeholder: 'email@example.com', type: 'email', max: 200 },
+                    ].map(({ key, label, placeholder, type, max }) => (
                       <div key={key}>
                         <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-mid)' }}>{label}</label>
-                        <input type={type} placeholder={placeholder}
+                        <input type={type} placeholder={placeholder} maxLength={max}
                           value={form[key as keyof typeof form]}
                           onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
                           className="w-full px-4 py-3 rounded-xl text-sm border outline-none"
@@ -115,7 +114,7 @@ export default function ContactPage() {
                     ))}
                     <div>
                       <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-mid)' }}>ข้อความ / ความต้องการ</label>
-                      <textarea rows={4} placeholder="เช่น ต้องการคอนโด 1 ห้องนอน ย่านศรีราชา งบ 12,000/เดือน..."
+                      <textarea rows={4} maxLength={2000} placeholder="เช่น ต้องการคอนโด 1 ห้องนอน ย่านศรีราชา งบ 12,000/เดือน..."
                         value={form.message}
                         onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
                         className="w-full px-4 py-3 rounded-xl text-sm border outline-none resize-none"
@@ -124,6 +123,11 @@ export default function ContactPage() {
                         onBlur={e => (e.target.style.borderColor = 'rgba(196,98,45,0.15)')}
                       />
                     </div>
+                    {errorMsg && (
+                      <div className="text-xs px-3 py-2 rounded-xl" style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626' }}>
+                        {errorMsg}
+                      </div>
+                    )}
                     <button
                       onClick={handleSubmit}
                       disabled={!form.name || !form.phone || submitting}

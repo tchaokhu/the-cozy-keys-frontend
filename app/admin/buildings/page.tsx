@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Edit2, Trash2, X, Building2, MapPin } from 'lucide-react'
 import { getBuildings, createBuilding, updateBuilding, deleteBuilding } from '@/lib/supabase'
+import { safeHttpUrl } from '@/lib/validate'
 import type { Building } from '@/types'
 import AdminSidebar from '@/components/admin/AdminSidebar'
 import AdminTable, { Column } from '@/components/admin/AdminTable'
@@ -85,13 +86,20 @@ export default function BuildingsPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) return
+    // Reject anything that isn't http(s) — javascript:/data: URLs would otherwise
+    // land in a public <a href> on the listing page.
+    if (form.google_map_url && !safeHttpUrl(form.google_map_url)) {
+      alert('Google Map URL ต้องเป็น http:// หรือ https:// เท่านั้น')
+      return
+    }
+    const payload = { ...form, google_map_url: safeHttpUrl(form.google_map_url) || '' }
     setSaving(true)
     try {
       if (editing) {
-        const updated = await updateBuilding(editing.id, form)
+        const updated = await updateBuilding(editing.id, payload)
         setBuildings(prev => prev.map(b => b.id === updated.id ? updated : b))
       } else {
-        const created = await createBuilding(form)
+        const created = await createBuilding(payload)
         setBuildings(prev => [...prev, created])
       }
       setShowForm(false)
@@ -206,9 +214,9 @@ export default function BuildingsPage() {
       headerAlign: 'center',
       cellAlign: 'center',
       skeleton: <div className="skeleton h-6 w-20 rounded-full mx-auto" />,
-      render: b => b.google_map_url
+      render: b => safeHttpUrl(b.google_map_url)
         ? (
-          <a href={b.google_map_url} target="_blank" rel="noopener noreferrer"
+          <a href={safeHttpUrl(b.google_map_url)!} target="_blank" rel="noopener noreferrer"
             onClick={e => e.stopPropagation()}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-opacity hover:opacity-80"
             style={{ background: 'rgba(196,98,45,0.1)', color: 'var(--terracotta)' }}>
@@ -249,7 +257,7 @@ export default function BuildingsPage() {
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
       <AdminSidebar />
 
-      <main className="flex-1 p-8 pt-20 md:pt-8 overflow-auto">
+      <main className="flex-1 p-8 pt-20 md:pt-24 overflow-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-serif text-2xl font-bold" style={{ color: 'var(--brown)' }}>ตึก / โครงการ</h1>
